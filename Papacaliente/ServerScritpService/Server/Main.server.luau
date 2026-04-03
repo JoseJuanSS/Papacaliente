@@ -21,6 +21,7 @@ remotes:GetOrCreateRemoteEvent(RemoteNames.UpdateState)
 remotes:GetOrCreateRemoteEvent(RemoteNames.UpdateTimer)
 remotes:GetOrCreateRemoteEvent(RemoteNames.Announce)
 remotes:GetOrCreateRemoteEvent(RemoteNames.MatchResult)
+remotes:GetOrCreateRemoteEvent(RemoteNames.RoundEvent)
 remotes:GetOrCreateRemoteEvent(RemoteNames.SpectatorAction)
 remotes:GetOrCreateRemoteEvent(RemoteNames.ShopRequest)
 remotes:GetOrCreateRemoteEvent(RemoteNames.ShopUpdate)
@@ -60,7 +61,9 @@ local crates = CrateService.new(remotes, RemoteNames, data, economy)
 _G.CrateService = crates
 crates:Start()
 
-local match = MatchService.new(remotes, RemoteNames, economy)
+_G.PlayerDataService = data
+
+local match = MatchService.new(remotes, RemoteNames, economy, data)
 match:Start()
 
 Players.PlayerAdded:Connect(function(plr)

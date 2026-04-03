@@ -6,6 +6,7 @@ RemoteNames.UpdateState = "UpdateState"
 RemoteNames.UpdateTimer = "UpdateTimer"
 RemoteNames.Announce = "Announce"
 RemoteNames.MatchResult = "MatchResult"
+RemoteNames.RoundEvent = "RoundEvent"
 
 RemoteNames.SpectatorAction = "SpectatorAction"
 

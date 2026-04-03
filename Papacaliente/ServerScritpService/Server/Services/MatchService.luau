@@ -1,716 +1,455 @@
--- ServerScriptService/Server/Services/MatchService.lua
--- Hot Potato - MatchService (POO)
--- ? RemotesService asegura RemoteEvents
--- ? Teleport robusto: ArenaSpawn/MapSpawn + fallback
--- ? Potato FX visible (Highlight)
--- ? PASS de la papa por touch (HRP.Touched) con cooldown + debounce
--- ? Eliminación por BOOM al final de cada ronda (solo holder pierde)
--- ? Spectator: eliminado queda en lobby y puede FreeRoamLobby / BackToSpectate
--- ? Recompensas: XP + Coins por participar, sobrevivir rondas, pass-kill, ganar match
--- ? EndScreen payload compatible con HUDController PRO
--- ? Hooks MissionService: PlayMatch / SurviveRound / PassKill / WinMatch
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local GameConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("GameConfig"))
+local MapManager = require(script.Parent.MatchModules.MapManager)
+local PotatoController = require(script.Parent.MatchModules.PotatoController)
+local RewardResolver = require(script.Parent.MatchModules.RewardResolver)
+local SpectatorManager = require(script.Parent.MatchModules.SpectatorManager)
 
 local MatchService = {}
 MatchService.__index = MatchService
 
-function MatchService.new(remotesService, remoteNames, economyService)
+function MatchService.new(remotesService, remoteNames, economyService, playerDataService)
 	local self = setmetatable({}, MatchService)
 	self.RemotesService = remotesService
 	self.RemoteNames = remoteNames
 	self.Economy = economyService
+	self.Data = playerDataService
 	return self
 end
 
 function MatchService:Start()
 	local Players = game:GetService("Players")
 
-	-- =========================
-	-- CONFIG (ajusta aquí)
-	-- =========================
-	local ROUND_TIME = 10
-	local INTERMISSION = 10
-	local START_DELAY = 2
-	local MIN_PLAYERS_TO_START = 2
+	local MATCH_CFG = GameConfig.Match
+	local REWARD_CFG = GameConfig.Rewards
+	local states = MATCH_CFG.States
 
-	local TOUCH_COOLDOWN = 1.2
-
-	-- XP
-	local XP_PARTICIPATE_MATCH = 10
-	local XP_SURVIVE_ROUND = 10
-	local XP_PASS_KILL = 25
-	local XP_WIN_MATCH = 50
-
-	-- COINS
-	local COINS_PARTICIPATE_MATCH = 10
-	local COINS_SURVIVE_ROUND = 5
-	local COINS_PASS_KILL = 10
-	local COINS_WIN_MATCH = 25
-
-	-- =========================
-	-- REMOTES
-	-- =========================
 	local RN = self.RemoteNames
-	local RemotesService = self.RemotesService
+	local remotes = self.RemotesService
 
-	local RE_UpdateState = RemotesService:GetOrCreateRemoteEvent(RN.UpdateState)
-	local RE_UpdateTimer = RemotesService:GetOrCreateRemoteEvent(RN.UpdateTimer)
-	local RE_Announce = RemotesService:GetOrCreateRemoteEvent(RN.Announce)
-	local RE_SpectatorAction = RemotesService:GetOrCreateRemoteEvent(RN.SpectatorAction)
-	local RE_MatchResult = RemotesService:GetOrCreateRemoteEvent(RN.MatchResult)
+	local RE_UpdateState = remotes:GetOrCreateRemoteEvent(RN.UpdateState)
+	local RE_UpdateTimer = remotes:GetOrCreateRemoteEvent(RN.UpdateTimer)
+	local RE_Announce = remotes:GetOrCreateRemoteEvent(RN.Announce)
+	local RE_SpectatorAction = remotes:GetOrCreateRemoteEvent(RN.SpectatorAction)
+	local RE_MatchResult = remotes:GetOrCreateRemoteEvent(RN.MatchResult)
+	local RE_RoundEvent = remotes:GetOrCreateRemoteEvent(RN.RoundEvent)
 
-	-- =========================
-	-- WORLD HELPERS
-	-- =========================
-	local function findPartAnywhere(name)
-		for _, inst in ipairs(workspace:GetDescendants()) do
-			if inst:IsA("BasePart") and inst.Name == name then
-				return inst
-			end
-		end
-		return nil
-	end
-
-	local function findPartDeep(model, name)
-		for _, d in ipairs(model:GetDescendants()) do
-			if d:IsA("BasePart") and d.Name == name then
-				return d
-			end
-		end
-		return nil
-	end
-
-	local LobbySpawn = findPartAnywhere("LobbySpawn")
-	local MapsFolder = workspace:FindFirstChild("Maps")
-
-	if not LobbySpawn then warn("[MatchService] LobbySpawn no encontrado.") end
-	if not MapsFolder then warn("[MatchService] Carpeta 'Maps' no encontrada en Workspace.") end
-
-	-- =========================
-	-- STATE
-	-- =========================
-	local gameState = "LOBBY"
+	local mapManager = MapManager.new(workspace)
+	local rewardResolver = RewardResolver.new(self.Economy, remotes, RN, self.Data)
+	local gameState = states.LOBBY
 	local activeMapModel = nil
-	local potatoHolder = nil
-
-	local potatoTouchedAt = 0
-	local touchDebounce = {}
-	local touchConnections = {}
-
+	local activeModifier = MATCH_CFG.DefaultModifier
+	local currentRoundIndex = 0
 	local eliminated = {}
-	local lastPasserOf = {} -- [loserUserId] = passerUserId
+	local potatoController
 
-	-- Rewards acumulados por match (EndScreen)
-	local coinsEarned = {}
-	local xpEarned = {}
-
-	local levelBefore = {}
-	local xpBefore = {}
-	local coinsBreakdown = {}
-	local xpBreakdown = {}
-
-	local function ensureBD(tbl, userId)
-		tbl[userId] = tbl[userId] or { ParticipateMatch = 0, SurviveRound = 0, WinMatch = 0, PassKill = 0 }
-		return tbl[userId]
+	local function announce(message)
+		RE_Announce:FireAllClients(message)
 	end
 
-	-- =========================
-	-- MISSION HOOK (safe)
-	-- =========================
-	local function missionRecord(plr, eventName, amount)
-		local ms = _G.MissionService
-		if ms and plr and plr.Parent == Players then
-			pcall(function()
-				ms:Record(plr, eventName, amount or 1)
-			end)
-		end
+	local function setTimer(value)
+		RE_UpdateTimer:FireAllClients(value)
 	end
 
-	-- =========================
-	-- REMOTE HELPERS
-	-- =========================
-	local function announce(msg)
-		RE_Announce:FireAllClients(msg)
+	local function fireRoundEvent(eventName, payload)
+		payload = payload or {}
+		payload.event = eventName
+		payload.roundIndex = currentRoundIndex
+		payload.state = gameState
+		RE_RoundEvent:FireAllClients(payload)
 	end
 
-	local function setTimer(v)
-		RE_UpdateTimer:FireAllClients(v)
+	local function getHumanoid(player)
+		local character = player.Character
+		return character and character:FindFirstChildOfClass("Humanoid") or nil
 	end
 
-	local function setState(state)
-		gameState = state
-		RE_UpdateState:FireAllClients(gameState, potatoHolder and potatoHolder.Name or "")
+	local function isEliminated(player)
+		return player and eliminated[player.UserId] == true
 	end
 
-	-- =========================
-	-- AWARDS
-	-- =========================
-	local function awardXP(plr, amount, reason)
-		amount = tonumber(amount) or 0
-		if amount <= 0 then return end
+	local function isAlive(player)
+		if not player then return false end
+		if player.Parent ~= Players then return false end
+		if isEliminated(player) then return false end
 
-		local xpService = _G.XPService
-		if xpService and plr and plr.Parent == Players then
-			xpEarned[plr.UserId] = (xpEarned[plr.UserId] or 0) + math.floor(amount)
-
-			local bd = ensureBD(xpBreakdown, plr.UserId)
-			if reason == "ParticipateMatch" then bd.ParticipateMatch += amount end
-			if reason == "SurviveRound" then bd.SurviveRound += amount end
-			if reason == "WinMatch" then bd.WinMatch += amount end
-			if reason == "PassKill" then bd.PassKill += amount end
-
-			pcall(function()
-				xpService:AddXP(plr, amount, reason)
-			end)
-		end
-	end
-
-	local function awardCoins(plr, amount, reason)
-		amount = tonumber(amount) or 0
-		if amount == 0 then return end
-		if not plr or plr.Parent ~= Players then return end
-
-		coinsEarned[plr.UserId] = (coinsEarned[plr.UserId] or 0) + math.floor(amount)
-
-		local bd = ensureBD(coinsBreakdown, plr.UserId)
-		if reason == "ParticipateMatch" then bd.ParticipateMatch += amount end
-		if reason == "SurviveRound" then bd.SurviveRound += amount end
-		if reason == "WinMatch" then bd.WinMatch += amount end
-		if reason == "PassKill" then bd.PassKill += amount end
-
-		local econ = self.Economy
-		if econ and econ.BE_AddCoins then
-			econ.BE_AddCoins:Fire(plr, amount)
-		else
-			local b = RemotesService:GetOrCreateBindableEvent(RN.BE_AddCoins)
-			b:Fire(plr, amount)
-		end
-	end
-
-	-- =========================
-	-- CHARACTER HELPERS
-	-- =========================
-	local function getHRP(plr)
-		local ch = plr.Character
-		return ch and ch:FindFirstChild("HumanoidRootPart") or nil
-	end
-
-	local function getHumanoid(plr)
-		local ch = plr.Character
-		return ch and ch:FindFirstChildOfClass("Humanoid") or nil
-	end
-
-	local function isEliminated(plr)
-		return plr and eliminated[plr.UserId] == true
-	end
-
-	local function isAlive(plr)
-		if not plr then return false end
-		if plr.Parent ~= Players then return false end
-		if isEliminated(plr) then return false end
-		local hum = getHumanoid(plr)
-		return hum and hum.Health > 0
+		local humanoid = getHumanoid(player)
+		return humanoid and humanoid.Health > 0
 	end
 
 	local function getAlivePlayers()
 		local list = {}
-		for _, p in ipairs(Players:GetPlayers()) do
-			if isAlive(p) then
-				table.insert(list, p)
+		for _, player in ipairs(Players:GetPlayers()) do
+			if isAlive(player) then
+				table.insert(list, player)
 			end
 		end
 		return list
 	end
 
-	-- =========================
-	-- MAP SPAWN
-	-- =========================
-	local function getArenaSpawnCFrame()
-		if activeMapModel then
-			local arena = findPartDeep(activeMapModel, "ArenaSpawn")
-			if arena then return arena.CFrame end
-
-			local mapSpawn = findPartDeep(activeMapModel, "MapSpawn")
-			if mapSpawn then return mapSpawn.CFrame end
-
-			return activeMapModel:GetPivot()
-		end
-
-		local globalArena = findPartAnywhere("ArenaSpawn")
-		return globalArena and globalArena.CFrame or nil
+	local function getAliveCount()
+		return #getAlivePlayers()
 	end
 
-	-- =========================
-	-- TELEPORT
-	-- =========================
-	local function moveCharacter(plr, cf)
+	local function buildStatePayload()
+		local holder = potatoController:GetHolder()
+		return {
+			state = gameState,
+			holderUserId = holder and holder.UserId or 0,
+			holderName = holder and holder.Name or "",
+			aliveCount = getAliveCount(),
+			roundIndex = currentRoundIndex,
+			matchModifier = activeModifier,
+		}
+	end
+
+	local function pushState()
+		RE_UpdateState:FireAllClients(buildStatePayload())
+	end
+
+	local spectatorManager = SpectatorManager.new(function()
+		return mapManager:GetLobbySpawn()
+	end)
+
+	potatoController = PotatoController.new(MATCH_CFG, {
+		IsRunning = function()
+			return gameState == states.RUNNING
+		end,
+		IsAlive = isAlive,
+		OnStateChanged = pushState,
+		OnRoundEvent = fireRoundEvent,
+		OnPassRecorded = function(fromPlayer)
+			rewardResolver:RecordPass(fromPlayer)
+		end,
+		OnHolderTime = function(player, seconds)
+			rewardResolver:RecordHolderTime(player, seconds)
+		end,
+	})
+
+	local function setState(state)
+		gameState = state
+		pushState()
+	end
+
+	local function moveCharacter(player, cf, applyNoPassWindow)
 		task.spawn(function()
-			if not plr.Character then
-				plr:LoadCharacter()
+			if not player.Character then
+				player:LoadCharacter()
 			end
-			local ch = plr.Character or plr.CharacterAdded:Wait()
-			local hrp = ch:WaitForChild("HumanoidRootPart", 5)
+
+			local character = player.Character or player.CharacterAdded:Wait()
+			local hrp = character:WaitForChild("HumanoidRootPart", 5)
 			if hrp then
-				ch:PivotTo(cf)
+				character:PivotTo(cf)
+				if applyNoPassWindow then
+					potatoController:SetSpawnTransferBlock(player, MATCH_CFG.SpawnNoPassWindow)
+				end
 			end
 		end)
 	end
 
 	local function teleportAllToLobby()
-		if not LobbySpawn then return end
-		for _, plr in ipairs(Players:GetPlayers()) do
-			moveCharacter(plr, LobbySpawn.CFrame + Vector3.new(0, 5, 0))
+		local lobbySpawn = mapManager:GetLobbySpawn()
+		if not lobbySpawn then return end
+
+		for _, player in ipairs(Players:GetPlayers()) do
+			moveCharacter(player, lobbySpawn.CFrame + Vector3.new(0, 5, 0), false)
 		end
 	end
 
 	local function teleportAllToArena()
-		local cf = getArenaSpawnCFrame()
+		local cf, sourceName = mapManager:GetArenaSpawnInfo(activeMapModel)
 		if not cf then
-			warn("[MatchService] No se encontró ArenaSpawn/MapSpawn.")
-			announce("?? No se encontró ArenaSpawn/MapSpawn.")
-			return
+			warn("[MatchService] No se encontro ArenaSpawn/MapSpawn.")
+			announce("No se encontro un spawn valido para la partida.")
+			return false
 		end
 
-		for _, plr in ipairs(Players:GetPlayers()) do
-			if not isEliminated(plr) then
-				moveCharacter(plr, cf + Vector3.new(0, 5, 0))
-			end
+		if sourceName ~= "ArenaSpawn" and sourceName ~= "MapSpawn" then
+			warn("[MatchService] Usando fallback de mapa: " .. tostring(sourceName))
 		end
-	end
 
-	-- =========================
-	-- SPECTATOR MODE
-	-- =========================
-	local function setSpectator(plr, enabled)
-		if not plr then return end
-		enabled = (enabled == true)
-
-		pcall(function()
-			plr:SetAttribute("Eliminated", enabled)
-		end)
-
-		local ch = plr.Character
-		if ch then
-			local hum = ch:FindFirstChildOfClass("Humanoid")
-			if hum then
-				if enabled then
-					hum.WalkSpeed = 0
-					hum.JumpPower = 0
-					hum.AutoRotate = false
-				else
-					hum.WalkSpeed = 16
-					pcall(function() hum.JumpPower = 50 end)
-					hum.AutoRotate = true
-				end
+		for _, player in ipairs(Players:GetPlayers()) do
+			if not isEliminated(player) then
+				moveCharacter(player, cf + Vector3.new(0, 5, 0), true)
 			end
 		end
 
-		-- eliminado queda en lobby
-		if enabled and LobbySpawn and plr.Character then
-			pcall(function()
-				plr.Character:PivotTo(LobbySpawn.CFrame + Vector3.new(0, 5, 0))
-			end)
-		end
-	end
-
-	-- =========================
-	-- POTATO FX
-	-- =========================
-	local function clearPotatoFx(plr)
-		local ch = plr and plr.Character
-		if not ch then return end
-		local old = ch:FindFirstChild("PotatoFX")
-		if old then old:Destroy() end
-	end
-
-	local function applyPotatoFx(plr)
-		local ch = plr and plr.Character
-		if not ch then return end
-
-		clearPotatoFx(plr)
-
-		local highlight = Instance.new("Highlight")
-		highlight.Name = "PotatoFX"
-		highlight.FillColor = Color3.fromRGB(255, 180, 0)
-		highlight.OutlineColor = Color3.new(1, 1, 1)
-		highlight.FillTransparency = 0.25
-		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-		highlight.Parent = ch
+		return true
 	end
 
 	local function pickRandomAlivePlayer()
-		local alive = getAlivePlayers()
-		if #alive == 0 then return nil end
-		return alive[math.random(1, #alive)]
+		local alivePlayers = getAlivePlayers()
+		if #alivePlayers == 0 then
+			return nil
+		end
+		return alivePlayers[math.random(1, #alivePlayers)]
 	end
 
-	local function setPotatoHolder(plr)
-		if potatoHolder == plr then return end
-
-		if potatoHolder then
-			clearPotatoFx(potatoHolder)
+	local function eliminatePlayer(player, reason)
+		if not player or isEliminated(player) then
+			return
 		end
 
-		potatoHolder = plr
-
-		if potatoHolder then
-			task.defer(function()
-				task.wait(0.1)
-				applyPotatoFx(potatoHolder)
-			end)
-		end
-
-		RE_UpdateState:FireAllClients(gameState, potatoHolder and potatoHolder.Name or "")
-	end
-
-	local function transferPotato(fromPlayer, toPlayer)
-		if not fromPlayer or not toPlayer then return end
-		if fromPlayer == toPlayer then return end
-
-		lastPasserOf[toPlayer.UserId] = fromPlayer.UserId
-		setPotatoHolder(toPlayer)
-	end
-
-	local function eliminatePlayer(plr, reason)
-		if not plr then return end
-		if isEliminated(plr) then return end
-
-		eliminated[plr.UserId] = true
-		setSpectator(plr, true)
-		clearPotatoFx(plr)
+		eliminated[player.UserId] = true
+		spectatorManager:SetSpectator(player, true)
+		potatoController:ClearPotatoFx(player)
 
 		if reason then
 			announce(reason)
 		end
 
-		if potatoHolder == plr then
-			potatoHolder = nil
-			RE_UpdateState:FireAllClients(gameState, "")
+		fireRoundEvent("boom", {
+			holderUserId = player.UserId,
+			holderName = player.Name,
+		})
+
+		if potatoController:GetHolder() == player then
+			potatoController:SetHolder(nil)
 		end
 	end
 
-	-- =========================
-	-- TOUCH TRANSFER
-	-- =========================
-	local function disconnectTouch(plr)
-		local id = plr.UserId
-		if touchConnections[id] then
-			touchConnections[id]:Disconnect()
-			touchConnections[id] = nil
-		end
+	local function canStart()
+		return #Players:GetPlayers() >= MATCH_CFG.MinPlayers
 	end
 
-	local function connectTouch(plr)
-		if not plr or not plr:IsA("Player") then return end
-		disconnectTouch(plr)
-
-		local function tryBind()
-			if not plr.Character then return end
-			local hrp = getHRP(plr)
-			if not hrp then return end
-
-			pcall(function() hrp.CanTouch = true end)
-
-			touchConnections[plr.UserId] = hrp.Touched:Connect(function(hit)
-				if gameState ~= "RUNNING" then return end
-				if not potatoHolder then return end
-				if plr == potatoHolder then return end
-				if not isAlive(plr) then return end
-				if not isAlive(potatoHolder) then return end
-
-				local now = os.clock()
-				if now - potatoTouchedAt < TOUCH_COOLDOWN then return end
-
-				local last = touchDebounce[plr.UserId] or 0
-				if now - last < TOUCH_COOLDOWN then return end
-
-				local holderChar = potatoHolder.Character
-				if not holderChar then return end
-				if not hit or not hit:IsDescendantOf(holderChar) then return end
-
-				touchDebounce[plr.UserId] = now
-				touchDebounce[potatoHolder.UserId] = now
-				potatoTouchedAt = now
-
-				local fromPlayer = potatoHolder
-				transferPotato(fromPlayer, plr)
-			end)
+	local function getRoundDuration()
+		if getAliveCount() <= MATCH_CFG.FinalRoundPlayerThreshold then
+			return MATCH_CFG.FinalRoundTime
 		end
-
-		if plr.Character then
-			tryBind()
-		end
-
-		plr.CharacterAdded:Connect(function()
-			task.wait(0.2)
-			tryBind()
-			if potatoHolder == plr then
-				task.defer(function()
-					task.wait(0.1)
-					applyPotatoFx(plr)
-				end)
-			end
-		end)
+		return MATCH_CFG.RoundTime
 	end
 
-	local function connectAllTouches()
-		for _, plr in ipairs(Players:GetPlayers()) do
-			connectTouch(plr)
-		end
-	end
-
-	Players.PlayerAdded:Connect(function(plr)
-		connectTouch(plr)
-
-		if gameState == "RUNNING" then
-			eliminated[plr.UserId] = true
-			task.defer(function()
-				task.wait(0.2)
-				setSpectator(plr, true)
-			end)
-		end
-	end)
-
-	Players.PlayerRemoving:Connect(function(plr)
-		disconnectTouch(plr)
-		if potatoHolder == plr then
-			setPotatoHolder(nil)
-		end
-	end)
-
-	-- =========================
-	-- MAP SYSTEM
-	-- =========================
-	local function pickRandomMap()
-		if not MapsFolder then return nil end
-		local maps = {}
-		for _, m in ipairs(MapsFolder:GetChildren()) do
-			if m:IsA("Model") then table.insert(maps, m) end
-		end
-		if #maps == 0 then return nil end
-		return maps[math.random(1, #maps)]
-	end
-
-	local function deactivateMap()
-		if activeMapModel and MapsFolder then
+	local function missionRecord(player, eventName, amount)
+		local missionService = _G.MissionService
+		if missionService and player and player.Parent == Players then
 			pcall(function()
-				activeMapModel.Parent = MapsFolder
+				missionService:Record(player, eventName, amount or 1)
 			end)
 		end
-		activeMapModel = nil
 	end
 
-	local function activateMap(map)
-		activeMapModel = map
-		if activeMapModel then
-			activeMapModel.Parent = workspace
+	local function resetMatchState()
+		currentRoundIndex = 0
+		activeModifier = MATCH_CFG.DefaultModifier
+		eliminated = {}
+		rewardResolver:Reset()
+		potatoController:Reset()
+
+		for _, player in ipairs(Players:GetPlayers()) do
+			spectatorManager:SetSpectator(player, false)
 		end
 	end
 
-	-- =========================
-	-- SPECTATOR ACTION
-	-- =========================
+	local function prepareParticipationRewards()
+		local xpService = _G.XPService
+		rewardResolver:CaptureBefore(Players:GetPlayers(), xpService)
+
+		for _, player in ipairs(Players:GetPlayers()) do
+			rewardResolver:RecordMatchPlayed(player)
+			rewardResolver:AwardXP(player, REWARD_CFG.XP.ParticipateMatch, "ParticipateMatch", Players)
+			rewardResolver:AwardCoins(player, REWARD_CFG.Coins.ParticipateMatch, "ParticipateMatch", Players)
+			missionRecord(player, "PlayMatch", 1)
+		end
+	end
+
+	local function awardSurvivorsForRound()
+		for _, survivor in ipairs(getAlivePlayers()) do
+			rewardResolver:RecordRoundSurvived(survivor)
+			rewardResolver:AwardXP(survivor, REWARD_CFG.XP.SurviveRound, "SurviveRound", Players)
+			rewardResolver:AwardCoins(survivor, REWARD_CFG.Coins.SurviveRound, "SurviveRound", Players)
+			missionRecord(survivor, "SurviveRound", 1)
+		end
+	end
+
+	local function resolveBoom()
+		potatoController:FlushHolderTime(os.clock())
+
+		local loser = potatoController:GetHolder()
+		if loser and isAlive(loser) then
+			local passerUserId = potatoController:GetLastPasserUserId(loser.UserId)
+			if passerUserId then
+				local passer = Players:GetPlayerByUserId(passerUserId)
+				if passer and isAlive(passer) then
+					rewardResolver:RecordPassKill(passer)
+					rewardResolver:AwardXP(passer, REWARD_CFG.XP.PassKill, "PassKill", Players)
+					rewardResolver:AwardCoins(passer, REWARD_CFG.Coins.PassKill, "PassKill", Players)
+					missionRecord(passer, "PassKill", 1)
+				end
+			end
+
+			eliminatePlayer(loser, "BOOM! " .. loser.Name .. " fue eliminado.")
+		else
+			announce("BOOM! (sin holder valido)")
+			fireRoundEvent("boom", {
+				holderName = "",
+				holderUserId = 0,
+			})
+		end
+	end
+
 	RE_SpectatorAction.OnServerEvent:Connect(function(player, action)
 		if typeof(action) ~= "string" then return end
 		if not player or player.Parent ~= Players then return end
 
 		if action == "FreeRoamLobby" then
-			if not player.Character or not LobbySpawn then return end
+			local lobbySpawn = mapManager:GetLobbySpawn()
+			if not player.Character or not lobbySpawn then return end
 
 			pcall(function()
-				player.Character:PivotTo(LobbySpawn.CFrame + Vector3.new(0, 5, 0))
+				player.Character:PivotTo(lobbySpawn.CFrame + Vector3.new(0, 5, 0))
 			end)
 
-			local hum = player.Character:FindFirstChildOfClass("Humanoid")
-			if hum then
-				hum.WalkSpeed = 16
-				pcall(function() hum.JumpPower = 50 end)
-				hum.AutoRotate = true
+			local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				humanoid.WalkSpeed = 16
+				pcall(function() humanoid.JumpPower = 50 end)
+				humanoid.AutoRotate = true
 			end
-
 		elseif action == "BackToSpectate" then
 			if player:GetAttribute("Eliminated") ~= true then return end
-			setSpectator(player, true)
+			spectatorManager:SetSpectator(player, true)
 		end
 	end)
 
-	-- =========================
-	-- ROUND LOOP
-	-- =========================
-	local function canStart()
-		return #Players:GetPlayers() >= MIN_PLAYERS_TO_START
-	end
+	Players.PlayerAdded:Connect(function(player)
+		potatoController:ConnectTouch(player)
+
+		if gameState == states.RUNNING then
+			eliminated[player.UserId] = true
+			task.defer(function()
+				task.wait(0.2)
+				spectatorManager:SetSpectator(player, true)
+				pushState()
+			end)
+		end
+	end)
+
+	Players.PlayerRemoving:Connect(function(player)
+		potatoController:DisconnectTouch(player)
+		potatoController:ClearTransferBlock(player)
+
+		if potatoController:GetHolder() == player then
+			potatoController:SetHolder(nil)
+		end
+
+		pushState()
+	end)
 
 	task.spawn(function()
 		while true do
-			if gameState == "LOBBY" then
+			if gameState == states.LOBBY then
 				setTimer("-")
 
 				if canStart() then
-					setState("INTERMISSION")
+					setState(states.INTERMISSION)
 					announce("Intermission...")
 
-					for i = INTERMISSION, 1, -1 do
+					for i = MATCH_CFG.IntermissionTime, 1, -1 do
 						setTimer(i)
 						task.wait(1)
 					end
 				else
 					task.wait(1)
 				end
+			elseif gameState == states.INTERMISSION then
+				resetMatchState()
+				prepareParticipationRewards()
 
-			elseif gameState == "INTERMISSION" then
-				-- reset match
-				touchDebounce = {}
-				potatoTouchedAt = 0
-				lastPasserOf = {}
-				setPotatoHolder(nil)
-
-				eliminated = {}
-				for _, p in ipairs(Players:GetPlayers()) do
-					setSpectator(p, false)
-				end
-
-				coinsEarned = {}
-				xpEarned = {}
-				coinsBreakdown = {}
-				xpBreakdown = {}
-				levelBefore = {}
-				xpBefore = {}
-
-				-- capture BEFORE (EndScreen)
-				local xpService = _G.XPService
-				if xpService and xpService.GetLevelXP then
-					for _, pp in ipairs(Players:GetPlayers()) do
-						local lv, xv = xpService:GetLevelXP(pp)
-						levelBefore[pp.UserId] = lv
-						xpBefore[pp.UserId] = xv
-					end
-				end
-
-				-- Participate reward + mission
-				for _, p in ipairs(Players:GetPlayers()) do
-					awardXP(p, XP_PARTICIPATE_MATCH, "ParticipateMatch")
-					awardCoins(p, COINS_PARTICIPATE_MATCH, "ParticipateMatch")
-					missionRecord(p, "PlayMatch", 1)
-				end
-
-				local map = pickRandomMap()
-				if map then
-					activateMap(map)
+				activeMapModel = mapManager:PickRandomMap()
+				if activeMapModel then
+					activeMapModel = mapManager:ActivateMap(activeMapModel)
 					task.wait(0.1)
 				end
 
-				teleportAllToArena()
-				connectAllTouches()
+				if not teleportAllToArena() then
+					setState(states.LOBBY)
+					activeMapModel = mapManager:DeactivateMap(activeMapModel)
+					task.wait(1)
+				else
+					potatoController:ConnectAll(Players:GetPlayers())
+					task.wait(MATCH_CFG.StartDelay)
 
-				task.wait(START_DELAY)
+					setState(states.RUNNING)
+					announce("Hot Potato started!")
 
-				setState("RUNNING")
-				announce("?? Hot Potato started!")
+					while gameState == states.RUNNING do
+						currentRoundIndex += 1
+						pushState()
 
-				while gameState == "RUNNING" do
-					if not potatoHolder or not isAlive(potatoHolder) then
-						setPotatoHolder(pickRandomAlivePlayer())
-					end
-
-					local roundEnd = os.clock() + ROUND_TIME
-					while os.clock() < roundEnd and gameState == "RUNNING" do
-						setTimer(math.floor(roundEnd - os.clock()))
-						task.wait(1)
-					end
-
-					-- BOOM: holder pierde
-					local loser = potatoHolder
-					if loser and isAlive(loser) then
-						local passerUserId = lastPasserOf[loser.UserId]
-						if passerUserId then
-							local passer = Players:GetPlayerByUserId(passerUserId)
-							if passer and isAlive(passer) then
-								awardXP(passer, XP_PASS_KILL, "PassKill")
-								awardCoins(passer, COINS_PASS_KILL, "PassKill")
-								missionRecord(passer, "PassKill", 1)
-							end
+						if not potatoController:GetHolder() or not isAlive(potatoController:GetHolder()) then
+							potatoController:SetHolder(pickRandomAlivePlayer())
 						end
 
-						eliminatePlayer(loser, "?? BOOM! " .. loser.Name .. " fue eliminado.")
-					else
-						announce("?? BOOM! (sin holder válido)")
-					end
+						local roundDuration = getRoundDuration()
+						local suddenDeathFired = false
+						local roundEnd = os.clock() + roundDuration
 
-					-- sobrevivir ronda (vivos después del boom)
-					for _, surv in ipairs(getAlivePlayers()) do
-						awardXP(surv, XP_SURVIVE_ROUND, "SurviveRound")
-						awardCoins(surv, COINS_SURVIVE_ROUND, "SurviveRound")
-						missionRecord(surv, "SurviveRound", 1)
-					end
+						fireRoundEvent("round_started", {
+							duration = roundDuration,
+							aliveCount = getAliveCount(),
+							holderName = potatoController:GetHolder() and potatoController:GetHolder().Name or "",
+						})
 
-					-- ¿ganador?
-					local alive = getAlivePlayers()
-					if #alive <= 1 then
-						local winner = (#alive == 1) and alive[1] or nil
+						while os.clock() < roundEnd and gameState == states.RUNNING do
+							local remaining = math.max(0, math.ceil(roundEnd - os.clock()))
+							setTimer(remaining)
 
-						if winner then
-							announce("?? Ganador: " .. winner.Name)
+							if not suddenDeathFired and remaining <= MATCH_CFG.SuddenDeathStart then
+								suddenDeathFired = true
+								fireRoundEvent("sudden_death", {
+									remaining = remaining,
+									holderName = potatoController:GetHolder() and potatoController:GetHolder().Name or "",
+								})
+							end
 
-							awardXP(winner, XP_WIN_MATCH, "WinMatch")
-							awardCoins(winner, COINS_WIN_MATCH, "WinMatch")
-							missionRecord(winner, "WinMatch", 1)
+							task.wait(1)
+						end
+
+						resolveBoom()
+						awardSurvivorsForRound()
+						pushState()
+
+						local alive = getAlivePlayers()
+						if #alive <= 1 then
+							local winner = (#alive == 1) and alive[1] or nil
+							setState(states.RESULT)
+
+							if winner then
+								rewardResolver:RecordMatchWin(winner)
+								announce("Ganador: " .. winner.Name)
+								rewardResolver:AwardXP(winner, REWARD_CFG.XP.WinMatch, "WinMatch", Players)
+								rewardResolver:AwardCoins(winner, REWARD_CFG.Coins.WinMatch, "WinMatch", Players)
+								missionRecord(winner, "WinMatch", 1)
+							else
+								announce("Partida terminada (sin ganador claro).")
+							end
+
+							for _, player in ipairs(Players:GetPlayers()) do
+								RE_MatchResult:FireClient(
+									player,
+									rewardResolver:BuildMatchResultPayload(player, winner, activeModifier, currentRoundIndex)
+								)
+							end
+
+							task.wait(MATCH_CFG.ResultDisplayTime)
+
+							potatoController:SetHolder(nil)
+							setState(states.LOBBY)
+							teleportAllToLobby()
+							activeMapModel = mapManager:DeactivateMap(activeMapModel)
+
+							eliminated = {}
+							for _, player in ipairs(Players:GetPlayers()) do
+								spectatorManager:SetSpectator(player, false)
+							end
+
+							break
 						else
-							announce("Partida terminada (sin ganador claro).")
+							potatoController:SetHolder(pickRandomAlivePlayer())
+							announce("Nueva ronda!")
 						end
-
-						-- EndScreen PRO payload
-						for _, p in ipairs(Players:GetPlayers()) do
-							local xpService2 = _G.XPService
-							local lvAfter, xpAfter = 1, 0
-							local xpForNext = 100
-
-							if xpService2 and xpService2.GetLevelXP then
-								lvAfter, xpAfter = xpService2:GetLevelXP(p)
-								if xpService2.GetXPToNext then
-									xpForNext = xpService2:GetXPToNext(lvAfter)
-								end
-							end
-
-							local payload = {
-								winnerName = winner and winner.Name or "",
-								wasWinner = (winner == p),
-
-								coins = {
-									total = coinsEarned[p.UserId] or 0,
-									breakdown = coinsBreakdown[p.UserId] or {ParticipateMatch=0,SurviveRound=0,WinMatch=0,PassKill=0},
-								},
-								xp = {
-									total = xpEarned[p.UserId] or 0,
-									breakdown = xpBreakdown[p.UserId] or {ParticipateMatch=0,SurviveRound=0,WinMatch=0,PassKill=0},
-								},
-
-								level = {
-									before = levelBefore[p.UserId] or lvAfter,
-									after = lvAfter,
-								},
-								xpBefore = xpBefore[p.UserId] or 0,
-								xpAfter = xpAfter,
-								xpForNext = xpForNext,
-							}
-
-							RE_MatchResult:FireClient(p, payload)
-						end
-
-						-- cleanup
-						setPotatoHolder(nil)
-						setState("LOBBY")
-						teleportAllToLobby()
-						deactivateMap()
-
-						eliminated = {}
-						for _, p in ipairs(Players:GetPlayers()) do
-							setSpectator(p, false)
-						end
-
-						break
-					else
-						setPotatoHolder(pickRandomAlivePlayer())
-						announce("?? Nueva ronda!")
 					end
 				end
 			end
@@ -719,9 +458,8 @@ function MatchService:Start()
 		end
 	end)
 
-	-- Init
 	teleportAllToLobby()
-	setState("LOBBY")
+	setState(states.LOBBY)
 end
 
 return MatchService

@@ -5,6 +5,51 @@ local DataStoreService = game:GetService("DataStoreService")
 local PlayerDataService = {}
 PlayerDataService.__index = PlayerDataService
 
+local DATA_VERSION = 7
+
+local function deepCopy(t)
+	if type(t) ~= "table" then
+		return t
+	end
+	local out = {}
+	for k, v in pairs(t) do
+		out[k] = deepCopy(v)
+	end
+	return out
+end
+
+local function defaultStats()
+	return {
+		MatchesPlayed = 0,
+		MatchesWon = 0,
+		RoundsSurvived = 0,
+		PassKills = 0,
+		PassesMade = 0,
+		TimeAsHolder = 0,
+	}
+end
+
+local function defaultSession()
+	return {
+		DataVersion = DATA_VERSION,
+		owned = {},
+		equipped = { Aura = nil, Trail = nil },
+		XP = 0,
+		Level = 1,
+		Missions = {
+			Daily = {},
+			Weekly = {},
+			DailyKey = "",
+			WeeklyKey = "",
+		},
+		Inventory = {
+			Aura = {},
+			Trail = {},
+		},
+		Stats = defaultStats(),
+	}
+end
+
 function PlayerDataService.new(economyService)
 	local self = setmetatable({}, PlayerDataService)
 
@@ -35,40 +80,10 @@ function PlayerDataService.new(economyService)
 
 	return self
 end
-
-local function deepCopy(t)
-	if type(t) ~= "table" then
-		return t
-	end
-	local out = {}
-	for k, v in pairs(t) do
-		out[k] = deepCopy(v)
-	end
-	return out
-end
-
 function PlayerDataService:GetSession(player)
 	local s = self.Sessions[player.UserId]
 	if not s then
-		s = {
-			owned = {},
-			equipped = { Aura = nil, Trail = nil },
-
-			XP = 0,
-			Level = 1,
-
-			Missions = {
-				Daily = {},
-				Weekly = {},
-				DailyKey = "",
-				WeeklyKey = "",
-			},
-
-			Inventory = {
-				Aura = {},
-				Trail = {},
-			},
-		}
+		s = defaultSession()
 		self.Sessions[player.UserId] = s
 	end
 	return s
@@ -83,27 +98,10 @@ function PlayerDataService:Load(player)
 		data = self.DS:GetAsync(key)
 	end)
 
-	local session = {
-		owned = {},
-		equipped = { Aura = nil, Trail = nil },
-
-		XP = 0,
-		Level = 1,
-
-		Missions = {
-			Daily = {},
-			Weekly = {},
-			DailyKey = "",
-			WeeklyKey = "",
-		},
-
-		Inventory = {
-			Aura = {},
-			Trail = {},
-		},
-	}
+	local session = defaultSession()
 
 	if ok and type(data) == "table" then
+		if type(data.DataVersion) == "number" then session.DataVersion = data.DataVersion end
 		if type(data.XP) == "number" then session.XP = data.XP end
 		if type(data.Level) == "number" then session.Level = data.Level end
 		if type(data.owned) == "table" then session.owned = deepCopy(data.owned) end
@@ -120,7 +118,18 @@ function PlayerDataService:Load(player)
 		if type(data.Inventory) == "table" then
 			session.Inventory = deepCopy(data.Inventory)
 		end
+		if type(data.Stats) == "table" then
+			for key, value in pairs(defaultStats()) do
+				if type(data.Stats[key]) == "number" then
+					session.Stats[key] = data.Stats[key]
+				else
+					session.Stats[key] = value
+				end
+			end
+		end
 	end
+
+	session.DataVersion = DATA_VERSION
 
 	self.Sessions[userId] = session
 	return session
@@ -132,6 +141,7 @@ function PlayerDataService:Save(player)
 
 	local key = "u_" .. tostring(player.UserId)
 	local payload = {
+		DataVersion = DATA_VERSION,
 		owned = session.owned,
 		equipped = session.equipped,
 		coins = self.Economy:GetCoins(player),
@@ -141,6 +151,7 @@ function PlayerDataService:Save(player)
 
 		Missions = session.Missions,
 		Inventory = session.Inventory,
+		Stats = session.Stats,
 	}
 
 	pcall(function()

@@ -40,7 +40,8 @@ function ShopService.new(remotesService, remoteNames, economyService, playerData
 
 	function self:SendUpdate(plr)
 		if not plr or not plr.Parent then return end
-		local data = self.Data:GetSession(plr)
+		local data = self.Data:GetProfile(plr)
+		if not data then return end
 		self.RE_ShopUpdate:FireClient(plr, {
 			catalog = self.CATALOG,
 			owned = data.owned,
@@ -54,7 +55,8 @@ function ShopService.new(remotesService, remoteNames, economyService, playerData
 	local function hookPlayer(plr)
 		plr.CharacterAdded:Connect(function()
 			task.wait(0.1)
-			local data = self.Data:GetSession(plr)
+			local data = self.Data:GetProfile(plr)
+			if not data then return end
 			self.Cosmetics:ApplyEquipped(plr, data.equipped)
 			self:SendUpdate(plr)
 		end)
@@ -72,7 +74,8 @@ end
 
 function ShopService:HandleRequest(plr, action, itemId)
 	if typeof(plr) ~= "Instance" or not plr:IsA("Player") then return end
-	local data = self.Data:GetSession(plr)
+	local data = self.Data:GetProfile(plr)
+	if not data then return end
 
 	if action == "Get" then
 		self:SendUpdate(plr)
