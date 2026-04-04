@@ -8,24 +8,22 @@ function EconomyService.new(remotesService, remoteNames, playerDataService)
 	local self = setmetatable({}, EconomyService)
 	self.Remotes = remotesService
 	self.Names = remoteNames
-	self.Data = playerDataService -- opcional
+	self.Data = playerDataService
 
-	-- BindableEvent único para sumar coins desde otros servicios (MatchService, etc.)
 	self.BE_AddCoins = remotesService:GetOrCreateBindableEvent(remoteNames.BE_AddCoins)
-
 	self.BE_AddCoins.Event:Connect(function(player, amount)
 		if typeof(player) ~= "Instance" or not player:IsA("Player") then return end
 		self:AddCoins(player, tonumber(amount) or 0)
 	end)
 
-	Players.PlayerAdded:Connect(function(plr)
-		self:EnsureLeaderstats(plr)
-		self:SyncFromProfile(plr)
+	Players.PlayerAdded:Connect(function(player)
+		self:EnsureLeaderstats(player)
+		self:SyncFromProfile(player)
 	end)
 
-	for _, plr in ipairs(Players:GetPlayers()) do
-		self:EnsureLeaderstats(plr)
-		self:SyncFromProfile(plr)
+	for _, player in ipairs(Players:GetPlayers()) do
+		self:EnsureLeaderstats(player)
+		self:SyncFromProfile(player)
 	end
 
 	return self
@@ -36,22 +34,22 @@ function EconomyService:SetDataService(playerDataService)
 end
 
 function EconomyService:EnsureLeaderstats(player)
-	local ls = player:FindFirstChild("leaderstats")
-	if not ls then
-		ls = Instance.new("Folder")
-		ls.Name = "leaderstats"
-		ls.Parent = player
+	local leaderstats = player:FindFirstChild("leaderstats")
+	if not leaderstats then
+		leaderstats = Instance.new("Folder")
+		leaderstats.Name = "leaderstats"
+		leaderstats.Parent = player
 	end
 
-	local function ensureInt(name, default)
-		local v = ls:FindFirstChild(name)
-		if not v then
-			v = Instance.new("IntValue")
-			v.Name = name
-			v.Value = default or 0
-			v.Parent = ls
+	local function ensureInt(name, defaultValue)
+		local value = leaderstats:FindFirstChild(name)
+		if not value then
+			value = Instance.new("IntValue")
+			value.Name = name
+			value.Value = defaultValue or 0
+			value.Parent = leaderstats
 		end
-		return v
+		return value
 	end
 
 	ensureInt("Coins", 0)
@@ -79,18 +77,54 @@ function EconomyService:SyncFromProfile(player)
 end
 
 function EconomyService:GetCoins(player)
-	local ls = player:FindFirstChild("leaderstats")
-	local v = ls and ls:FindFirstChild("Coins")
-	return v and v.Value or 0
+	local leaderstats = player:FindFirstChild("leaderstats")
+	local value = leaderstats and leaderstats:FindFirstChild("Coins")
+	return value and value.Value or 0
+end
+
+function EconomyService:GetPoints(player)
+	local leaderstats = player:FindFirstChild("leaderstats")
+	local value = leaderstats and leaderstats:FindFirstChild("Points")
+	return value and value.Value or 0
+end
+
+function EconomyService:GetTotalPoints(player)
+	local leaderstats = player:FindFirstChild("leaderstats")
+	local value = leaderstats and leaderstats:FindFirstChild("TotalPoints")
+	return value and value.Value or 0
 end
 
 function EconomyService:SetCoins(player, value)
 	self:EnsureLeaderstats(player)
-	local v = math.max(0, math.floor(value or 0))
-	player.leaderstats.Coins.Value = v
+	local safeValue = math.max(0, math.floor(value or 0))
+	player.leaderstats.Coins.Value = safeValue
 
 	local profile = self:GetProfile(player)
-	if profile then profile.Coins = v end
+	if profile then
+		profile.Coins = safeValue
+	end
+end
+
+function EconomyService:SetPoints(player, value)
+	self:EnsureLeaderstats(player)
+	local safeValue = math.max(0, math.floor(value or 0))
+	player.leaderstats.Points.Value = safeValue
+
+	local profile = self:GetProfile(player)
+	if profile then
+		profile.Points = safeValue
+	end
+end
+
+function EconomyService:SetTotalPoints(player, value)
+	self:EnsureLeaderstats(player)
+	local safeValue = math.max(0, math.floor(value or 0))
+	player.leaderstats.TotalPoints.Value = safeValue
+
+	local profile = self:GetProfile(player)
+	if profile then
+		profile.TotalPoints = safeValue
+	end
 end
 
 function EconomyService:AddCoins(player, delta)
@@ -98,8 +132,8 @@ function EconomyService:AddCoins(player, delta)
 	local add = math.floor(delta or 0)
 	if add == 0 then return end
 
-	local v = player.leaderstats.Coins
-	v.Value = math.max(0, v.Value + add)
+	local value = player.leaderstats.Coins
+	value.Value = math.max(0, value.Value + add)
 
 	local profile = self:GetProfile(player)
 	if profile then
@@ -113,8 +147,8 @@ function EconomyService:AddPoints(player, delta)
 	local add = math.floor(delta or 0)
 	if add == 0 then return end
 
-	local v = player.leaderstats.Points
-	v.Value = math.max(0, v.Value + add)
+	local value = player.leaderstats.Points
+	value.Value = math.max(0, value.Value + add)
 
 	local profile = self:GetProfile(player)
 	if profile then
@@ -128,8 +162,8 @@ function EconomyService:AddTotalPoints(player, delta)
 	local add = math.floor(delta or 0)
 	if add == 0 then return end
 
-	local v = player.leaderstats.TotalPoints
-	v.Value = math.max(0, v.Value + add)
+	local value = player.leaderstats.TotalPoints
+	value.Value = math.max(0, value.Value + add)
 
 	local profile = self:GetProfile(player)
 	if profile then

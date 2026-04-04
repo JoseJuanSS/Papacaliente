@@ -316,13 +316,19 @@ function HUDController.Start(RemoteNames)
 			("Modifier: %s"):format(tostring(modifierLabel)),
 			modifierDescription ~= "" and ("Efecto: " .. modifierDescription) or "",
 			"",
+			"Recompensas",
 			("Coins ganadas: +%d"):format(coinsTotal),
 			("XP ganada: +%d"):format(xpTotal),
 			("Nivel: %s -> %s"):format(
 				tostring(payload.level and payload.level.before or "-"),
 				tostring(payload.level and payload.level.after or "-")
 			),
+			("XP actual: %s / %s"):format(
+				tostring(payload.xpAfter or "-"),
+				tostring(payload.xpForNext or "-")
+			),
 			"",
+			"Desglose",
 			("Coins detalle: P:%d S:%d W:%d PK:%d"):format(
 				safeNum(coinBreakdown.ParticipateMatch),
 				safeNum(coinBreakdown.SurviveRound),
@@ -336,11 +342,13 @@ function HUDController.Start(RemoteNames)
 				safeNum(xpBreakdown.PassKill)
 			),
 			"",
+			"Tu partida",
 			("Pases: %d"):format(safeNum(matchStats.passesMade)),
 			("Pass-kills: %d"):format(safeNum(matchStats.passKills)),
 			("Rondas sobrevividas: %d"):format(safeNum(matchStats.roundsSurvived)),
 			("Tiempo con la papa: %.1fs"):format(tonumber(matchStats.timeAsHolder) or 0),
 			"",
+			"Progreso",
 			("Lifetime wins: %d | matches: %d"):format(
 				safeNum(lifetimeStats.matchesWon),
 				safeNum(lifetimeStats.matchesPlayed)

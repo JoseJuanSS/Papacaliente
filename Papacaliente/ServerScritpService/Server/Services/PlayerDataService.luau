@@ -5,7 +5,7 @@ local DataStoreService = game:GetService("DataStoreService")
 local PlayerDataService = {}
 PlayerDataService.__index = PlayerDataService
 
-local DATA_VERSION = 7
+local DATA_VERSION = 8
 
 local function deepCopy(t)
 	if type(t) ~= "table" then
@@ -36,6 +36,9 @@ local function defaultSession()
 		equipped = { Aura = nil, Trail = nil },
 		XP = 0,
 		Level = 1,
+		Coins = 0,
+		Points = 0,
+		TotalPoints = 0,
 		Missions = {
 			Daily = {},
 			Weekly = {},
@@ -108,14 +111,17 @@ function PlayerDataService:Load(player)
 		if type(data.DataVersion) == "number" then session.DataVersion = data.DataVersion end
 		if type(data.XP) == "number" then session.XP = data.XP end
 		if type(data.Level) == "number" then session.Level = data.Level end
+		if type(data.coins) == "number" then session.Coins = data.coins end
+		if type(data.Points) == "number" then session.Points = data.Points end
+		if type(data.TotalPoints) == "number" then session.TotalPoints = data.TotalPoints end
 		if type(data.owned) == "table" then session.owned = deepCopy(data.owned) end
 		if type(data.equipped) == "table" then
 			session.equipped.Aura = data.equipped.Aura
 			session.equipped.Trail = data.equipped.Trail
 		end
-		if type(data.coins) == "number" then
-			self.Economy:SetCoins(player, data.coins)
-		end
+		self.Economy:SetCoins(player, session.Coins or 0)
+		self.Economy:SetPoints(player, session.Points or 0)
+		self.Economy:SetTotalPoints(player, session.TotalPoints or 0)
 		if type(data.Missions) == "table" then
 			session.Missions = deepCopy(data.Missions)
 		end
@@ -154,6 +160,8 @@ function PlayerDataService:Save(player)
 		owned = session.owned,
 		equipped = session.equipped,
 		coins = self.Economy:GetCoins(player),
+		Points = self.Economy:GetPoints(player),
+		TotalPoints = self.Economy:GetTotalPoints(player),
 
 		XP = session.XP,
 		Level = session.Level,

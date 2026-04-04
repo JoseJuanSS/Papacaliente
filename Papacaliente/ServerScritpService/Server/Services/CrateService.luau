@@ -19,6 +19,8 @@ function CrateService.new(remotesService, remoteNames, playerDataService, econom
 	self.RE_CrateOpenResult = remotesService:GetOrCreateRemoteEvent(remoteNames.CrateOpenResult)
 	self.RE_CrateDataRequest = remotesService:GetOrCreateRemoteEvent(remoteNames.CrateDataRequest)
 	self.RE_CrateDataUpdate = remotesService:GetOrCreateRemoteEvent(remoteNames.CrateDataUpdate)
+	self.RE_InventoryUpdate = remotesService:GetOrCreateRemoteEvent(remoteNames.InventoryUpdate)
+	self.RE_ShopUpdate = remotesService:GetOrCreateRemoteEvent(remoteNames.ShopUpdate)
 
 	self._lastOpenAt = {}
 
@@ -27,14 +29,14 @@ end
 
 local function getRandomRarity(weights)
 	local total = 0
-	for _, w in pairs(weights) do
-		total += w
+	for _, weight in pairs(weights) do
+		total += weight
 	end
 
 	local roll = math.random() * total
 	local acc = 0
-	for rarity, w in pairs(weights) do
-		acc += w
+	for rarity, weight in pairs(weights) do
+		acc += weight
 		if roll <= acc then
 			return rarity
 		end
@@ -55,6 +57,9 @@ function CrateService:_ensureInventory(profile)
 		Aura = {},
 		Trail = {},
 	}
+	profile.Inventory.Aura = profile.Inventory.Aura or {}
+	profile.Inventory.Trail = profile.Inventory.Trail or {}
+	profile.equipped = profile.equipped or { Aura = nil, Trail = nil }
 end
 
 function CrateService:_ownsItem(profile, itemType, itemId)
@@ -66,7 +71,6 @@ end
 
 function CrateService:_grantItem(profile, itemType, itemId)
 	self:_ensureInventory(profile)
-	profile.Inventory[itemType] = profile.Inventory[itemType] or {}
 	profile.Inventory[itemType][itemId] = true
 end
 
@@ -84,6 +88,19 @@ function CrateService:_serializeCrates()
 	return out
 end
 
+function CrateService:_serializeInventory(profile)
+	self:_ensureInventory(profile)
+	return {
+		Inventory = profile.Inventory,
+		Equipped = profile.equipped,
+	}
+end
+
+function CrateService:_pushProgressionUpdates(player, profile)
+	if not player or player.Parent ~= Players or not profile then return end
+	self.RE_InventoryUpdate:FireClient(player, self:_serializeInventory(profile))
+end
+
 function CrateService:SendCrateData(player)
 	if not player or player.Parent ~= Players then return end
 	self.RE_CrateDataUpdate:FireClient(player, self:_serializeCrates())
@@ -91,12 +108,12 @@ end
 
 function CrateService:_openCrate(player, crateId)
 	local now = os.clock()
-	local uid = player.UserId
-	local last = self._lastOpenAt[uid] or 0
+	local userId = player.UserId
+	local last = self._lastOpenAt[userId] or 0
 	if now - last < 0.75 then
 		return
 	end
-	self._lastOpenAt[uid] = now
+	self._lastOpenAt[userId] = now
 
 	local profile = self.Data:GetProfile(player)
 	if not profile then
@@ -122,7 +139,6 @@ function CrateService:_openCrate(player, crateId)
 
 	local rarity = getRandomRarity(CrateConfig.RarityWeights)
 	local rarityItems = crate.items[rarity]
-
 	if not rarityItems or #rarityItems == 0 then
 		self.RE_CrateOpenResult:FireClient(player, {
 			ok = false,
@@ -146,7 +162,6 @@ function CrateService:_openCrate(player, crateId)
 
 	local duplicate = self:_ownsItem(profile, item.type, item.id)
 	local refundCoins = 0
-
 	if duplicate then
 		refundCoins = math.floor(crate.priceCoins * (crate.dupeRefundPercent or 0))
 		if refundCoins > 0 then
@@ -156,6 +171,8 @@ function CrateService:_openCrate(player, crateId)
 		self:_grantItem(profile, item.type, item.id)
 	end
 
+	self:_pushProgressionUpdates(player, profile)
+
 	self.RE_CrateOpenResult:FireClient(player, {
 		ok = true,
 		crateId = crateId,
@@ -163,6 +180,7 @@ function CrateService:_openCrate(player, crateId)
 		item = item,
 		duplicate = duplicate,
 		refundCoins = refundCoins,
+		coinsAfter = self.Economy:GetCoins(player),
 	})
 end
 
