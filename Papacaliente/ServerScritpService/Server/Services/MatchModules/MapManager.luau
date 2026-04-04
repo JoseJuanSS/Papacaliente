@@ -74,6 +74,61 @@ function MapManager:PickRandomMap()
 	return nil
 end
 
+function MapManager:GetPlayableMapNames()
+	if not self.MapsFolder then
+		return {}
+	end
+
+	local validNames = {}
+	local fallbackNames = {}
+
+	for _, map in ipairs(self.MapsFolder:GetChildren()) do
+		if map:IsA("Model") then
+			if self:ValidateMap(map) then
+				table.insert(validNames, map.Name)
+			else
+				table.insert(fallbackNames, map.Name)
+			end
+		end
+	end
+
+	if #validNames > 0 then
+		return validNames
+	end
+
+	return fallbackNames
+end
+
+function MapManager:GetRandomMapName(preferredName)
+	local source = self:GetPlayableMapNames()
+	if #source == 0 then
+		return nil
+	end
+
+	if preferredName then
+		for _, mapName in ipairs(source) do
+			if mapName == preferredName then
+				return mapName
+			end
+		end
+	end
+
+	return source[math.random(1, #source)]
+end
+
+function MapManager:GetMapByName(mapName)
+	if not self.MapsFolder or not mapName then
+		return nil
+	end
+
+	local map = self.MapsFolder:FindFirstChild(mapName)
+	if map and map:IsA("Model") then
+		return map
+	end
+
+	return nil
+end
+
 function MapManager:GetArenaSpawnInfo(activeMapModel)
 	local arena = self:FindPartDeep(activeMapModel, "ArenaSpawn")
 	if arena then return arena.CFrame, "ArenaSpawn" end

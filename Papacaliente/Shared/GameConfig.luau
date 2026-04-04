@@ -90,4 +90,10 @@ GameConfig.Rewards = {
 	},
 }
 
+GameConfig.LiveOps = {
+	ModifierHistorySize = 1,
+	MapHistorySize = 1,
+	RecentMatchSamples = 10,
+}
+
 return GameConfig

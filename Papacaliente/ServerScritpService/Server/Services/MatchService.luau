@@ -2,6 +2,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local GameConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("GameConfig"))
 local MapManager = require(script.Parent.MatchModules.MapManager)
+local LiveOpsService = require(script.Parent.MatchModules.LiveOpsService)
 local PotatoController = require(script.Parent.MatchModules.PotatoController)
 local RewardResolver = require(script.Parent.MatchModules.RewardResolver)
 local SpectatorManager = require(script.Parent.MatchModules.SpectatorManager)
@@ -25,6 +26,7 @@ function MatchService:Start()
 	local MATCH_CFG = GameConfig.Match
 	local MODIFIER_CFG = GameConfig.Modifiers
 	local REWARD_CFG = GameConfig.Rewards
+	local LIVEOPS_CFG = GameConfig.LiveOps or {}
 	local states = MATCH_CFG.States
 
 	local RN = self.RemoteNames
@@ -38,6 +40,7 @@ function MatchService:Start()
 	local RE_RoundEvent = remotes:GetOrCreateRemoteEvent(RN.RoundEvent)
 
 	local mapManager = MapManager.new(workspace)
+	local liveOpsService = LiveOpsService.new(LIVEOPS_CFG)
 	local rewardResolver = RewardResolver.new(self.Economy, remotes, RN, self.Data)
 	local masteryService = MasteryService.new(self.Data)
 	local gameState = states.LOBBY
@@ -49,6 +52,8 @@ function MatchService:Start()
 	local potatoController
 	local modifierActiveThisRound = false
 	local matchStartedAt = 0
+	local activeMapName = ""
+	local matchAbandons = 0
 
 	local function announce(message)
 		RE_Announce:FireAllClients(message)
@@ -109,6 +114,7 @@ function MatchService:Start()
 			matchModifier = activeModifier,
 			matchModifierLabel = activeModifierConfig and activeModifierConfig.displayName or activeModifier,
 			matchModifierDescription = activeModifierConfig and activeModifierConfig.description or "",
+			mapName = activeMapName,
 		}
 	end
 
@@ -148,32 +154,12 @@ function MatchService:Start()
 
 	local function chooseModifier()
 		local pool = MODIFIER_CFG and MODIFIER_CFG.Pool or nil
-		if type(pool) ~= "table" or #pool == 0 then
-			activeModifier = MATCH_CFG.DefaultModifier
-		else
-			local totalWeight = 0
-			for _, modifierId in ipairs(pool) do
-				local config = MODIFIER_CFG
-					and MODIFIER_CFG.Configs
-					and MODIFIER_CFG.Configs[modifierId]
-				totalWeight += math.max(1, tonumber(config and config.weight) or 1)
-			end
-
-			local roll = math.random(1, math.max(1, totalWeight))
-			local cursor = 0
-			activeModifier = MATCH_CFG.DefaultModifier
-
-			for _, modifierId in ipairs(pool) do
-				local config = MODIFIER_CFG
-					and MODIFIER_CFG.Configs
-					and MODIFIER_CFG.Configs[modifierId]
-				cursor += math.max(1, tonumber(config and config.weight) or 1)
-				if roll <= cursor then
-					activeModifier = modifierId
-					break
-				end
-			end
-		end
+		activeModifier = liveOpsService:ChooseModifier(
+			pool,
+			MODIFIER_CFG and MODIFIER_CFG.Configs,
+			MATCH_CFG.DefaultModifier
+		)
+		liveOpsService:CommitModifier(activeModifier)
 
 		activeModifierConfig = MODIFIER_CFG
 			and MODIFIER_CFG.Configs
@@ -345,8 +331,10 @@ function MatchService:Start()
 		currentRoundIndex = 0
 		activeModifier = MATCH_CFG.DefaultModifier
 		activeModifierConfig = MODIFIER_CFG and MODIFIER_CFG.Configs and MODIFIER_CFG.Configs[activeModifier] or nil
+		activeMapName = ""
 		eliminated = {}
 		modifierActiveThisRound = false
+		matchAbandons = 0
 		rewardResolver:Reset()
 		potatoController:Reset()
 
@@ -358,6 +346,7 @@ function MatchService:Start()
 	local function prepareParticipationRewards()
 		local xpService = _G.XPService
 		rewardResolver:CaptureBefore(Players:GetPlayers(), xpService)
+		liveOpsService:MarkMatchPlayed(Players:GetPlayers())
 
 		for _, player in ipairs(Players:GetPlayers()) do
 			rewardResolver:RecordMatchPlayed(player)
@@ -435,6 +424,7 @@ function MatchService:Start()
 	end)
 
 	Players.PlayerAdded:Connect(function(player)
+		liveOpsService:RegisterPlayer(player)
 		potatoController:ConnectTouch(player)
 
 		if gameState == states.RUNNING then
@@ -448,6 +438,11 @@ function MatchService:Start()
 	end)
 
 	Players.PlayerRemoving:Connect(function(player)
+		if gameState == states.RUNNING and isEliminated(player) ~= true then
+			matchAbandons += 1
+			liveOpsService:MarkAbandon(player)
+		end
+
 		potatoController:DisconnectTouch(player)
 		potatoController:ClearTransferBlock(player)
 
@@ -480,8 +475,19 @@ function MatchService:Start()
 				prepareParticipationRewards()
 				matchStartedAt = os.clock()
 
-				activeMapModel = mapManager:PickRandomMap()
+				local preferredMapName = liveOpsService:ChooseMap(
+					mapManager:GetPlayableMapNames(),
+					mapManager:GetRandomMapName()
+				)
+				if preferredMapName then
+					activeMapModel = mapManager:GetMapByName(preferredMapName)
+				end
+				if not activeMapModel then
+					activeMapModel = mapManager:PickRandomMap()
+				end
 				if activeMapModel then
+					activeMapName = activeMapModel.Name
+					liveOpsService:CommitMap(activeMapName)
 					activeMapModel = mapManager:ActivateMap(activeMapModel)
 					task.wait(0.1)
 				end
@@ -495,7 +501,7 @@ function MatchService:Start()
 					task.wait(MATCH_CFG.StartDelay)
 
 					setState(states.RUNNING)
-					announce("Hot Potato started! Modifier: " .. tostring(activeModifierConfig and activeModifierConfig.displayName or activeModifier))
+					announce("Hot Potato started! Mapa: " .. tostring(activeMapName ~= "" and activeMapName or "?") .. " | Modifier: " .. tostring(activeModifierConfig and activeModifierConfig.displayName or activeModifier))
 
 					while gameState == states.RUNNING do
 						currentRoundIndex += 1
@@ -558,15 +564,35 @@ function MatchService:Start()
 								announce("Partida terminada (sin ganador claro).")
 							end
 
+							liveOpsService:RecordMatch({
+								modifier = activeModifier,
+								mapName = activeMapName,
+								roundsPlayed = currentRoundIndex,
+								durationSeconds = os.clock() - matchStartedAt,
+								abandons = matchAbandons,
+							})
+
 							for _, player in ipairs(Players:GetPlayers()) do
 								local profile = self.Data and self.Data:GetProfile(player)
 								local stats = profile and profile.Stats or nil
 								local unlocked = masteryService:Evaluate(player, stats)
 								local masterySnapshot = masteryService:BuildSnapshot(player, unlocked)
+								local recentSnapshot = liveOpsService:GetRecentSnapshot()
+								local sessionSnapshot = liveOpsService:GetSessionSnapshot(player)
+								local liveOpsSnapshot = {
+									sessionMinutes = sessionSnapshot.sessionMinutes,
+									matchesPlayed = sessionSnapshot.matchesPlayed,
+									abandons = sessionSnapshot.abandons,
+									recentMatchesTracked = recentSnapshot.recentMatchesTracked,
+									averageDurationSeconds = recentSnapshot.averageDurationSeconds,
+									averageRounds = recentSnapshot.averageRounds,
+									averageAbandons = recentSnapshot.averageAbandons,
+								}
 								rewardResolver:SetMatchTelemetry(
 									activeModifierConfig and activeModifierConfig.displayName or activeModifier,
 									currentRoundIndex,
-									os.clock() - matchStartedAt
+									os.clock() - matchStartedAt,
+									activeMapName
 								)
 
 								RE_MatchResult:FireClient(
@@ -576,7 +602,8 @@ function MatchService:Start()
 										winner,
 										activeModifierConfig and activeModifierConfig.displayName or activeModifier,
 										currentRoundIndex,
-										masterySnapshot
+										masterySnapshot,
+										liveOpsSnapshot
 									)
 								)
 								if #unlocked > 0 then

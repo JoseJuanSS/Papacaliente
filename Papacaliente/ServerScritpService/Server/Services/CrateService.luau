@@ -20,7 +20,6 @@ function CrateService.new(remotesService, remoteNames, playerDataService, econom
 	self.RE_CrateDataRequest = remotesService:GetOrCreateRemoteEvent(remoteNames.CrateDataRequest)
 	self.RE_CrateDataUpdate = remotesService:GetOrCreateRemoteEvent(remoteNames.CrateDataUpdate)
 	self.RE_InventoryUpdate = remotesService:GetOrCreateRemoteEvent(remoteNames.InventoryUpdate)
-	self.RE_ShopUpdate = remotesService:GetOrCreateRemoteEvent(remoteNames.ShopUpdate)
 
 	self._lastOpenAt = {}
 
@@ -135,8 +134,6 @@ function CrateService:_openCrate(player, crateId)
 		return
 	end
 
-	self.Economy:SetCoins(player, coins - crate.priceCoins)
-
 	local rarity = getRandomRarity(CrateConfig.RarityWeights)
 	local rarityItems = crate.items[rarity]
 	if not rarityItems or #rarityItems == 0 then
@@ -157,6 +154,8 @@ function CrateService:_openCrate(player, crateId)
 		})
 		return
 	end
+
+	self.Economy:SetCoins(player, coins - crate.priceCoins)
 
 	self:_ensureInventory(profile)
 

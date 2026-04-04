@@ -28,6 +28,7 @@ function RewardResolver:Reset()
 	self.MatchStats = {}
 	self.MatchTelemetry = {
 		modifier = "Classic",
+		mapName = "",
 		roundsPlayed = 0,
 		passesTotal = 0,
 		eliminations = 0,
@@ -179,10 +180,11 @@ function RewardResolver:RecordElimination()
 	self.MatchTelemetry.eliminations += 1
 end
 
-function RewardResolver:SetMatchTelemetry(modifier, roundsPlayed, durationSeconds)
+function RewardResolver:SetMatchTelemetry(modifier, roundsPlayed, durationSeconds, mapName)
 	self.MatchTelemetry.modifier = modifier or self.MatchTelemetry.modifier
 	self.MatchTelemetry.roundsPlayed = tonumber(roundsPlayed) or self.MatchTelemetry.roundsPlayed
 	self.MatchTelemetry.durationSeconds = tonumber(durationSeconds) or self.MatchTelemetry.durationSeconds
+	self.MatchTelemetry.mapName = mapName or self.MatchTelemetry.mapName
 end
 
 function RewardResolver:RecordHolderTime(player, seconds)
@@ -194,7 +196,7 @@ function RewardResolver:RecordHolderTime(player, seconds)
 	self:AddPersistentStat(player, "TimeAsHolder", rounded)
 end
 
-function RewardResolver:BuildMatchResultPayload(player, winner, modifier, roundsPlayed, masterySnapshot)
+function RewardResolver:BuildMatchResultPayload(player, winner, modifier, roundsPlayed, masterySnapshot, liveOpsSnapshot)
 	local xpService = _G.XPService
 	local levelAfter, xpAfter = 1, 0
 	local xpForNext = 100
@@ -253,6 +255,15 @@ function RewardResolver:BuildMatchResultPayload(player, winner, modifier, rounds
 			unlockedNow = {},
 			totalUnlocked = 0,
 			totalAchievements = 0,
+		},
+		liveOps = liveOpsSnapshot or {
+			sessionMinutes = 0,
+			matchesPlayed = 0,
+			abandons = 0,
+			recentMatchesTracked = 0,
+			averageDurationSeconds = 0,
+			averageRounds = 0,
+			averageAbandons = 0,
 		},
 	}
 end

@@ -88,6 +88,7 @@ function HUDController.Start(RemoteNames)
 		holderName = "",
 		aliveCount = 0,
 		roundIndex = 0,
+		mapName = "",
 		matchModifier = "Classic",
 		matchModifierLabel = "Classic",
 		matchModifierDescription = "",
@@ -98,9 +99,10 @@ function HUDController.Start(RemoteNames)
 	local function refreshHUD()
 		stateLabel.Text = ("Estado: %s"):format(tostring(stateData.state or "-"))
 		holderLabel.Text = ("Holder: %s"):format((stateData.holderName and stateData.holderName ~= "") and stateData.holderName or "-")
-		metaLabel.Text = ("Vivos: %s | Ronda: %s | Mod: %s"):format(
+		metaLabel.Text = ("Vivos: %s | Ronda: %s | Mapa: %s | Mod: %s"):format(
 			tostring(stateData.aliveCount or "-"),
 			tostring(stateData.roundIndex or "-"),
+			tostring((stateData.mapName and stateData.mapName ~= "") and stateData.mapName or "-"),
 			tostring(stateData.matchModifierLabel or stateData.matchModifier or "Classic")
 		)
 		timerLabel.Text = ("Timer: %s"):format(tostring(currentTimer))
@@ -161,6 +163,7 @@ function HUDController.Start(RemoteNames)
 			stateData.holderName = payload.holderName or ""
 			stateData.aliveCount = payload.aliveCount or 0
 			stateData.roundIndex = payload.roundIndex or 0
+			stateData.mapName = payload.mapName or ""
 			stateData.matchModifier = payload.matchModifier or "Classic"
 			stateData.matchModifierLabel = payload.matchModifierLabel or stateData.matchModifier
 			stateData.matchModifierDescription = payload.matchModifierDescription or ""
@@ -307,12 +310,14 @@ function HUDController.Start(RemoteNames)
 		local modifierDescription = stateData.matchModifierDescription or ""
 		local telemetry = payload.telemetry or {}
 		local mastery = payload.mastery or {}
+		local liveOps = payload.liveOps or {}
 		local unlockedNow = mastery.unlockedNow or {}
 		local unlockedTitle = (type(unlockedNow) == "table" and unlockedNow[1] and unlockedNow[1].title) or ""
 
 		local title = wasWinner and ("GANASTE " .. winnerName) or ("Gano: " .. winnerName)
 		local lines = {
 			title,
+			("Mapa: %s"):format(tostring(telemetry.mapName or stateData.mapName or "-")),
 			("Modifier: %s"):format(tostring(modifierLabel)),
 			modifierDescription ~= "" and ("Efecto: " .. modifierDescription) or "",
 			"",
@@ -368,6 +373,16 @@ function HUDController.Start(RemoteNames)
 				safeNum(mastery.totalAchievements)
 			),
 			unlockedTitle ~= "" and ("Nuevo hito: " .. unlockedTitle) or "",
+			("Sesion: %d min | partidas: %d | abandons: %d"):format(
+				safeNum(liveOps.sessionMinutes),
+				safeNum(liveOps.matchesPlayed),
+				safeNum(liveOps.abandons)
+			),
+			("Media reciente: %.1fs | rondas %.1f | abandons %.1f"):format(
+				tonumber(liveOps.averageDurationSeconds) or 0,
+				tonumber(liveOps.averageRounds) or 0,
+				tonumber(liveOps.averageAbandons) or 0
+			),
 		}
 
 		resultLabel.Text = table.concat(lines, "\n")
