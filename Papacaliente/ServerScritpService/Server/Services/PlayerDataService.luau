@@ -47,6 +47,10 @@ local function defaultSession()
 			Trail = {},
 		},
 		Stats = defaultStats(),
+		Mastery = {
+			Unlocked = {},
+			Progress = {},
+		},
 	}
 end
 
@@ -118,6 +122,11 @@ function PlayerDataService:Load(player)
 		if type(data.Inventory) == "table" then
 			session.Inventory = deepCopy(data.Inventory)
 		end
+		if type(data.Mastery) == "table" then
+			session.Mastery = deepCopy(data.Mastery)
+			session.Mastery.Unlocked = session.Mastery.Unlocked or {}
+			session.Mastery.Progress = session.Mastery.Progress or {}
+		end
 		if type(data.Stats) == "table" then
 			for key, value in pairs(defaultStats()) do
 				if type(data.Stats[key]) == "number" then
@@ -152,6 +161,7 @@ function PlayerDataService:Save(player)
 		Missions = session.Missions,
 		Inventory = session.Inventory,
 		Stats = session.Stats,
+		Mastery = session.Mastery,
 	}
 
 	pcall(function()

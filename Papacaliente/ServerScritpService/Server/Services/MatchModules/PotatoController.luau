@@ -180,12 +180,17 @@ function PotatoController:ConnectTouch(player)
 			if not self.Callbacks.IsAlive(self.Holder) then return end
 
 			local now = os.clock()
-			if now - self.PotatoTouchedAt < self.Config.TouchCooldown then return end
+			local touchCooldown = self.Config.TouchCooldown
+			if self.Callbacks.GetTouchCooldown then
+				touchCooldown = self.Callbacks.GetTouchCooldown() or touchCooldown
+			end
+
+			if now - self.PotatoTouchedAt < touchCooldown then return end
 			if now < (self.TransferBlockedUntil[player.UserId] or 0) then return end
 			if now < (self.TransferBlockedUntil[self.Holder.UserId] or 0) then return end
 
 			local last = self.TouchDebounce[player.UserId] or 0
-			if now - last < self.Config.TouchCooldown then return end
+			if now - last < touchCooldown then return end
 
 			local holderCharacter = self.Holder.Character
 			if not holderCharacter then return end

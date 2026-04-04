@@ -46,14 +46,15 @@ function HUDController.Start(RemoteNames)
 	local announceLabel = makeLabel(UDim2.new(0, 600, 0, 42), UDim2.new(0.5, -300, 0, 248), "")
 	local eventLabel = makeLabel(UDim2.new(0, 420, 0, 38), UDim2.new(0.5, -210, 0, 296), "")
 	local spectatorLabel = makeLabel(UDim2.new(0, 260, 0, 36), UDim2.new(1, -280, 0, 20), "")
+	local masteryLabel = makeLabel(UDim2.new(0, 500, 0, 42), UDim2.new(0.5, -250, 0, 342), "")
 
 	local coinsLabel = makeLabel(UDim2.new(0, 220, 0, 40), UDim2.new(0, 20, 0, 20), "Coins: -")
 	local pointsLabel = makeLabel(UDim2.new(0, 220, 0, 40), UDim2.new(0, 20, 0, 70), "Points: -")
 	local levelLabel = makeLabel(UDim2.new(0, 220, 0, 40), UDim2.new(0, 20, 0, 120), "Level: -")
 
 	local resultFrame = Instance.new("Frame")
-	resultFrame.Size = UDim2.new(0, 560, 0, 250)
-	resultFrame.Position = UDim2.new(0.5, -280, 0.5, -125)
+	resultFrame.Size = UDim2.new(0, 620, 0, 360)
+	resultFrame.Position = UDim2.new(0.5, -310, 0.5, -180)
 	resultFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
 	resultFrame.BackgroundTransparency = 0.15
 	resultFrame.Visible = false
@@ -68,7 +69,7 @@ function HUDController.Start(RemoteNames)
 	resultLabel.TextYAlignment = Enum.TextYAlignment.Top
 	resultLabel.Font = Enum.Font.GothamBold
 	resultLabel.TextScaled = false
-	resultLabel.TextSize = 22
+	resultLabel.TextSize = 20
 	resultLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	resultLabel.Text = ""
 	resultLabel.Parent = resultFrame
@@ -88,6 +89,8 @@ function HUDController.Start(RemoteNames)
 		aliveCount = 0,
 		roundIndex = 0,
 		matchModifier = "Classic",
+		matchModifierLabel = "Classic",
+		matchModifierDescription = "",
 	}
 
 	local currentTimer = "-"
@@ -98,7 +101,7 @@ function HUDController.Start(RemoteNames)
 		metaLabel.Text = ("Vivos: %s | Ronda: %s | Mod: %s"):format(
 			tostring(stateData.aliveCount or "-"),
 			tostring(stateData.roundIndex or "-"),
-			tostring(stateData.matchModifier or "Classic")
+			tostring(stateData.matchModifierLabel or stateData.matchModifier or "Classic")
 		)
 		timerLabel.Text = ("Timer: %s"):format(tostring(currentTimer))
 
@@ -159,6 +162,8 @@ function HUDController.Start(RemoteNames)
 			stateData.aliveCount = payload.aliveCount or 0
 			stateData.roundIndex = payload.roundIndex or 0
 			stateData.matchModifier = payload.matchModifier or "Classic"
+			stateData.matchModifierLabel = payload.matchModifierLabel or stateData.matchModifier
+			stateData.matchModifierDescription = payload.matchModifierDescription or ""
 		else
 			stateData.state = tostring(payload or "-")
 			stateData.holderName = tostring(legacyHolderName or "")
@@ -234,6 +239,18 @@ function HUDController.Start(RemoteNames)
 		end)
 	end
 
+	local function showMastery(text)
+		masteryLabel.Text = text or ""
+		masteryLabel.TextColor3 = Color3.fromRGB(255, 232, 140)
+		pulseLabel(masteryLabel, Color3.fromRGB(90, 72, 20))
+
+		task.delay(3, function()
+			if masteryLabel.Text == text then
+				masteryLabel.Text = ""
+			end
+		end)
+	end
+
 	local function bindRoundEvent(remote)
 		if not remote then return end
 
@@ -256,6 +273,17 @@ function HUDController.Start(RemoteNames)
 			elseif payload.event == "round_started" then
 				showEvent(("Ronda %s"):format(tostring(payload.roundIndex or "?")), Color3.fromRGB(180, 255, 180))
 				pulseLabel(stateLabel, Color3.fromRGB(35, 70, 35))
+			elseif payload.event == "modifier_triggered" then
+				local label = tostring(payload.modifierLabel or payload.modifier or "?")
+				local description = tostring(payload.modifierDescription or "")
+				local text = description ~= "" and ("Modifier: %s | %s"):format(label, description) or ("Modifier: %s"):format(label)
+				showEvent(text, Color3.fromRGB(255, 210, 120))
+				pulseLabel(metaLabel, Color3.fromRGB(95, 70, 25))
+				flashScreen(Color3.fromRGB(255, 220, 120), 0.9)
+			elseif payload.event == "mastery_unlocked" then
+				if payload.playerUserId == player.UserId and type(payload.unlocked) == "table" and payload.unlocked[1] then
+					showMastery("Hito desbloqueado: " .. tostring(payload.unlocked[1].title or ""))
+				end
 			end
 		end)
 	end
@@ -272,10 +300,21 @@ function HUDController.Start(RemoteNames)
 		local coinsTotal = (payload.coins and safeNum(payload.coins.total)) or safeNum(payload.coinsEarned)
 		local xpTotal = (payload.xp and safeNum(payload.xp.total)) or safeNum(payload.xpEarned)
 		local matchStats = payload.stats and payload.stats.match or {}
+		local lifetimeStats = payload.stats and payload.stats.lifetime or {}
+		local coinBreakdown = payload.coins and payload.coins.breakdown or {}
+		local xpBreakdown = payload.xp and payload.xp.breakdown or {}
+		local modifierLabel = payload.progression and payload.progression.modifier or stateData.matchModifierLabel or "Classic"
+		local modifierDescription = stateData.matchModifierDescription or ""
+		local telemetry = payload.telemetry or {}
+		local mastery = payload.mastery or {}
+		local unlockedNow = mastery.unlockedNow or {}
+		local unlockedTitle = (type(unlockedNow) == "table" and unlockedNow[1] and unlockedNow[1].title) or ""
 
 		local title = wasWinner and ("GANASTE " .. winnerName) or ("Gano: " .. winnerName)
 		local lines = {
 			title,
+			("Modifier: %s"):format(tostring(modifierLabel)),
+			modifierDescription ~= "" and ("Efecto: " .. modifierDescription) or "",
 			"",
 			("Coins ganadas: +%d"):format(coinsTotal),
 			("XP ganada: +%d"):format(xpTotal),
@@ -284,10 +323,43 @@ function HUDController.Start(RemoteNames)
 				tostring(payload.level and payload.level.after or "-")
 			),
 			"",
+			("Coins detalle: P:%d S:%d W:%d PK:%d"):format(
+				safeNum(coinBreakdown.ParticipateMatch),
+				safeNum(coinBreakdown.SurviveRound),
+				safeNum(coinBreakdown.WinMatch),
+				safeNum(coinBreakdown.PassKill)
+			),
+			("XP detalle: P:%d S:%d W:%d PK:%d"):format(
+				safeNum(xpBreakdown.ParticipateMatch),
+				safeNum(xpBreakdown.SurviveRound),
+				safeNum(xpBreakdown.WinMatch),
+				safeNum(xpBreakdown.PassKill)
+			),
+			"",
 			("Pases: %d"):format(safeNum(matchStats.passesMade)),
 			("Pass-kills: %d"):format(safeNum(matchStats.passKills)),
 			("Rondas sobrevividas: %d"):format(safeNum(matchStats.roundsSurvived)),
 			("Tiempo con la papa: %.1fs"):format(tonumber(matchStats.timeAsHolder) or 0),
+			"",
+			("Lifetime wins: %d | matches: %d"):format(
+				safeNum(lifetimeStats.matchesWon),
+				safeNum(lifetimeStats.matchesPlayed)
+			),
+			("Lifetime passes: %d | pass-kills: %d"):format(
+				safeNum(lifetimeStats.passesMade),
+				safeNum(lifetimeStats.passKills)
+			),
+			("Telemetria: rondas %d | pases %d | eliminaciones %d"):format(
+				safeNum(telemetry.roundsPlayed),
+				safeNum(telemetry.passesTotal),
+				safeNum(telemetry.eliminations)
+			),
+			("Duracion match: %.1fs"):format(tonumber(telemetry.durationSeconds) or 0),
+			("Hitos: %d/%d"):format(
+				safeNum(mastery.totalUnlocked),
+				safeNum(mastery.totalAchievements)
+			),
+			unlockedTitle ~= "" and ("Nuevo hito: " .. unlockedTitle) or "",
 		}
 
 		resultLabel.Text = table.concat(lines, "\n")

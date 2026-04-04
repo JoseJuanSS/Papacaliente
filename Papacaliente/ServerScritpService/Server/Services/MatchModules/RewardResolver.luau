@@ -26,6 +26,14 @@ function RewardResolver:Reset()
 	self.CoinsBreakdown = {}
 	self.XPBreakdown = {}
 	self.MatchStats = {}
+	self.MatchTelemetry = {
+		modifier = "Classic",
+		roundsPlayed = 0,
+		passesTotal = 0,
+		eliminations = 0,
+		passKills = 0,
+		durationSeconds = 0,
+	}
 end
 
 function RewardResolver:EnsureBreakdown(tbl, userId)
@@ -140,12 +148,14 @@ function RewardResolver:RecordPass(player)
 	if not player then return end
 	self:EnsureMatchStats(player.UserId).PassesMade += 1
 	self:AddPersistentStat(player, "PassesMade", 1)
+	self.MatchTelemetry.passesTotal += 1
 end
 
 function RewardResolver:RecordPassKill(player)
 	if not player then return end
 	self:EnsureMatchStats(player.UserId).PassKills += 1
 	self:AddPersistentStat(player, "PassKills", 1)
+	self.MatchTelemetry.passKills += 1
 end
 
 function RewardResolver:RecordRoundSurvived(player)
@@ -165,6 +175,16 @@ function RewardResolver:RecordMatchWin(player)
 	self:AddPersistentStat(player, "MatchesWon", 1)
 end
 
+function RewardResolver:RecordElimination()
+	self.MatchTelemetry.eliminations += 1
+end
+
+function RewardResolver:SetMatchTelemetry(modifier, roundsPlayed, durationSeconds)
+	self.MatchTelemetry.modifier = modifier or self.MatchTelemetry.modifier
+	self.MatchTelemetry.roundsPlayed = tonumber(roundsPlayed) or self.MatchTelemetry.roundsPlayed
+	self.MatchTelemetry.durationSeconds = tonumber(durationSeconds) or self.MatchTelemetry.durationSeconds
+end
+
 function RewardResolver:RecordHolderTime(player, seconds)
 	if not player then return end
 	local rounded = math.max(0, math.round((tonumber(seconds) or 0) * 10) / 10)
@@ -174,7 +194,7 @@ function RewardResolver:RecordHolderTime(player, seconds)
 	self:AddPersistentStat(player, "TimeAsHolder", rounded)
 end
 
-function RewardResolver:BuildMatchResultPayload(player, winner, modifier, roundsPlayed)
+function RewardResolver:BuildMatchResultPayload(player, winner, modifier, roundsPlayed, masterySnapshot)
 	local xpService = _G.XPService
 	local levelAfter, xpAfter = 1, 0
 	local xpForNext = 100
@@ -227,6 +247,12 @@ function RewardResolver:BuildMatchResultPayload(player, winner, modifier, rounds
 		progression = {
 			modifier = modifier,
 			roundsPlayed = roundsPlayed,
+		},
+		telemetry = self.MatchTelemetry,
+		mastery = masterySnapshot or {
+			unlockedNow = {},
+			totalUnlocked = 0,
+			totalAchievements = 0,
 		},
 	}
 end

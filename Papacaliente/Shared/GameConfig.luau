@@ -20,6 +20,61 @@ GameConfig.Match = {
 	ResultDisplayTime = 2,
 }
 
+GameConfig.Modifiers = {
+	Pool = {
+		"Classic",
+		"SpeedUp",
+		"BoomShorter",
+		"DoublePass",
+		"RapidPass",
+	},
+	Configs = {
+		Classic = {
+			id = "Classic",
+			displayName = "Classic",
+			type = "None",
+			weight = 5,
+			description = "Ronda estandar.",
+		},
+		SpeedUp = {
+			id = "SpeedUp",
+			displayName = "Speed Up",
+			type = "SpeedBoostOnSuddenDeath",
+			weight = 2,
+			boostWalkSpeed = 24,
+			boostJumpPower = 60,
+			description = "Todos aceleran al entrar en sudden death.",
+		},
+		BoomShorter = {
+			id = "BoomShorter",
+			displayName = "Boom Shorter",
+			type = "ShorterRound",
+			weight = 3,
+			roundTime = 7,
+			finalRoundTime = 5,
+			description = "La bomba explota mas rapido.",
+		},
+		DoublePass = {
+			id = "DoublePass",
+			displayName = "Double Pass",
+			type = "RewardMultiplier",
+			weight = 2,
+			targetReason = "PassKill",
+			xpMultiplier = 2,
+			coinsMultiplier = 2,
+			description = "Los pass-kills valen el doble.",
+		},
+		RapidPass = {
+			id = "RapidPass",
+			displayName = "Rapid Pass",
+			type = "TouchCooldown",
+			weight = 3,
+			touchCooldown = 0.7,
+			description = "La papa se puede pasar mas rapido.",
+		},
+	},
+}
+
 GameConfig.Rewards = {
 	XP = {
 		ParticipateMatch = 10,

@@ -5,6 +5,7 @@ local MapManager = require(script.Parent.MatchModules.MapManager)
 local PotatoController = require(script.Parent.MatchModules.PotatoController)
 local RewardResolver = require(script.Parent.MatchModules.RewardResolver)
 local SpectatorManager = require(script.Parent.MatchModules.SpectatorManager)
+local MasteryService = require(script.Parent.MatchModules.MasteryService)
 
 local MatchService = {}
 MatchService.__index = MatchService
@@ -22,6 +23,7 @@ function MatchService:Start()
 	local Players = game:GetService("Players")
 
 	local MATCH_CFG = GameConfig.Match
+	local MODIFIER_CFG = GameConfig.Modifiers
 	local REWARD_CFG = GameConfig.Rewards
 	local states = MATCH_CFG.States
 
@@ -37,12 +39,16 @@ function MatchService:Start()
 
 	local mapManager = MapManager.new(workspace)
 	local rewardResolver = RewardResolver.new(self.Economy, remotes, RN, self.Data)
+	local masteryService = MasteryService.new(self.Data)
 	local gameState = states.LOBBY
 	local activeMapModel = nil
 	local activeModifier = MATCH_CFG.DefaultModifier
+	local activeModifierConfig = MODIFIER_CFG and MODIFIER_CFG.Configs and MODIFIER_CFG.Configs[MATCH_CFG.DefaultModifier] or nil
 	local currentRoundIndex = 0
 	local eliminated = {}
 	local potatoController
+	local modifierActiveThisRound = false
+	local matchStartedAt = 0
 
 	local function announce(message)
 		RE_Announce:FireAllClients(message)
@@ -101,6 +107,8 @@ function MatchService:Start()
 			aliveCount = getAliveCount(),
 			roundIndex = currentRoundIndex,
 			matchModifier = activeModifier,
+			matchModifierLabel = activeModifierConfig and activeModifierConfig.displayName or activeModifier,
+			matchModifierDescription = activeModifierConfig and activeModifierConfig.description or "",
 		}
 	end
 
@@ -116,6 +124,12 @@ function MatchService:Start()
 		IsRunning = function()
 			return gameState == states.RUNNING
 		end,
+		GetTouchCooldown = function()
+			if activeModifierConfig and activeModifierConfig.type == "TouchCooldown" then
+				return activeModifierConfig.touchCooldown or MATCH_CFG.TouchCooldown
+			end
+			return MATCH_CFG.TouchCooldown
+		end,
 		IsAlive = isAlive,
 		OnStateChanged = pushState,
 		OnRoundEvent = fireRoundEvent,
@@ -130,6 +144,95 @@ function MatchService:Start()
 	local function setState(state)
 		gameState = state
 		pushState()
+	end
+
+	local function chooseModifier()
+		local pool = MODIFIER_CFG and MODIFIER_CFG.Pool or nil
+		if type(pool) ~= "table" or #pool == 0 then
+			activeModifier = MATCH_CFG.DefaultModifier
+		else
+			local totalWeight = 0
+			for _, modifierId in ipairs(pool) do
+				local config = MODIFIER_CFG
+					and MODIFIER_CFG.Configs
+					and MODIFIER_CFG.Configs[modifierId]
+				totalWeight += math.max(1, tonumber(config and config.weight) or 1)
+			end
+
+			local roll = math.random(1, math.max(1, totalWeight))
+			local cursor = 0
+			activeModifier = MATCH_CFG.DefaultModifier
+
+			for _, modifierId in ipairs(pool) do
+				local config = MODIFIER_CFG
+					and MODIFIER_CFG.Configs
+					and MODIFIER_CFG.Configs[modifierId]
+				cursor += math.max(1, tonumber(config and config.weight) or 1)
+				if roll <= cursor then
+					activeModifier = modifierId
+					break
+				end
+			end
+		end
+
+		activeModifierConfig = MODIFIER_CFG
+			and MODIFIER_CFG.Configs
+			and MODIFIER_CFG.Configs[activeModifier]
+			or { id = activeModifier, displayName = activeModifier, type = "None", description = "" }
+	end
+
+	local function getRewardAmount(reason, category)
+		local base = REWARD_CFG[category] and REWARD_CFG[category][reason] or 0
+		if not activeModifierConfig or activeModifierConfig.type ~= "RewardMultiplier" then
+			return base
+		end
+		if activeModifierConfig.targetReason ~= reason then
+			return base
+		end
+
+		local multiplierKey = string.lower(category) .. "Multiplier"
+		local multiplier = activeModifierConfig[multiplierKey] or 1
+		return math.floor(base * multiplier)
+	end
+
+	local function resetModifierEffects()
+		modifierActiveThisRound = false
+		for _, player in ipairs(Players:GetPlayers()) do
+			local humanoid = getHumanoid(player)
+			if humanoid then
+				if not isEliminated(player) then
+					humanoid.WalkSpeed = 16
+					pcall(function() humanoid.JumpPower = 50 end)
+				end
+			end
+		end
+	end
+
+	local function applySuddenDeathModifier()
+		if modifierActiveThisRound then
+			return
+		end
+		modifierActiveThisRound = true
+
+		if not activeModifierConfig or activeModifierConfig.type ~= "SpeedBoostOnSuddenDeath" then
+			return
+		end
+
+		for _, player in ipairs(getAlivePlayers()) do
+			local humanoid = getHumanoid(player)
+			if humanoid then
+				humanoid.WalkSpeed = activeModifierConfig.boostWalkSpeed or 24
+				pcall(function()
+					humanoid.JumpPower = activeModifierConfig.boostJumpPower or 60
+				end)
+			end
+		end
+
+		fireRoundEvent("modifier_triggered", {
+			modifier = activeModifier,
+			modifierLabel = activeModifierConfig.displayName or activeModifier,
+			modifierDescription = activeModifierConfig.description or "",
+		})
 	end
 
 	local function moveCharacter(player, cf, applyNoPassWindow)
@@ -193,6 +296,7 @@ function MatchService:Start()
 		end
 
 		eliminated[player.UserId] = true
+		rewardResolver:RecordElimination()
 		spectatorManager:SetSpectator(player, true)
 		potatoController:ClearPotatoFx(player)
 
@@ -215,6 +319,13 @@ function MatchService:Start()
 	end
 
 	local function getRoundDuration()
+		if activeModifierConfig and activeModifierConfig.type == "ShorterRound" then
+			if getAliveCount() <= MATCH_CFG.FinalRoundPlayerThreshold then
+				return activeModifierConfig.finalRoundTime or MATCH_CFG.FinalRoundTime
+			end
+			return activeModifierConfig.roundTime or MATCH_CFG.RoundTime
+		end
+
 		if getAliveCount() <= MATCH_CFG.FinalRoundPlayerThreshold then
 			return MATCH_CFG.FinalRoundTime
 		end
@@ -233,7 +344,9 @@ function MatchService:Start()
 	local function resetMatchState()
 		currentRoundIndex = 0
 		activeModifier = MATCH_CFG.DefaultModifier
+		activeModifierConfig = MODIFIER_CFG and MODIFIER_CFG.Configs and MODIFIER_CFG.Configs[activeModifier] or nil
 		eliminated = {}
+		modifierActiveThisRound = false
 		rewardResolver:Reset()
 		potatoController:Reset()
 
@@ -248,8 +361,8 @@ function MatchService:Start()
 
 		for _, player in ipairs(Players:GetPlayers()) do
 			rewardResolver:RecordMatchPlayed(player)
-			rewardResolver:AwardXP(player, REWARD_CFG.XP.ParticipateMatch, "ParticipateMatch", Players)
-			rewardResolver:AwardCoins(player, REWARD_CFG.Coins.ParticipateMatch, "ParticipateMatch", Players)
+			rewardResolver:AwardXP(player, getRewardAmount("ParticipateMatch", "XP"), "ParticipateMatch", Players)
+			rewardResolver:AwardCoins(player, getRewardAmount("ParticipateMatch", "Coins"), "ParticipateMatch", Players)
 			missionRecord(player, "PlayMatch", 1)
 		end
 	end
@@ -257,8 +370,8 @@ function MatchService:Start()
 	local function awardSurvivorsForRound()
 		for _, survivor in ipairs(getAlivePlayers()) do
 			rewardResolver:RecordRoundSurvived(survivor)
-			rewardResolver:AwardXP(survivor, REWARD_CFG.XP.SurviveRound, "SurviveRound", Players)
-			rewardResolver:AwardCoins(survivor, REWARD_CFG.Coins.SurviveRound, "SurviveRound", Players)
+			rewardResolver:AwardXP(survivor, getRewardAmount("SurviveRound", "XP"), "SurviveRound", Players)
+			rewardResolver:AwardCoins(survivor, getRewardAmount("SurviveRound", "Coins"), "SurviveRound", Players)
 			missionRecord(survivor, "SurviveRound", 1)
 		end
 	end
@@ -273,9 +386,17 @@ function MatchService:Start()
 				local passer = Players:GetPlayerByUserId(passerUserId)
 				if passer and isAlive(passer) then
 					rewardResolver:RecordPassKill(passer)
-					rewardResolver:AwardXP(passer, REWARD_CFG.XP.PassKill, "PassKill", Players)
-					rewardResolver:AwardCoins(passer, REWARD_CFG.Coins.PassKill, "PassKill", Players)
+					rewardResolver:AwardXP(passer, getRewardAmount("PassKill", "XP"), "PassKill", Players)
+					rewardResolver:AwardCoins(passer, getRewardAmount("PassKill", "Coins"), "PassKill", Players)
 					missionRecord(passer, "PassKill", 1)
+					if activeModifierConfig and activeModifierConfig.type == "RewardMultiplier" then
+						fireRoundEvent("modifier_triggered", {
+							modifier = activeModifier,
+							modifierLabel = activeModifierConfig.displayName or activeModifier,
+							modifierDescription = activeModifierConfig.description or "",
+							recipientName = passer.Name,
+						})
+					end
 				end
 			end
 
@@ -355,7 +476,9 @@ function MatchService:Start()
 				end
 			elseif gameState == states.INTERMISSION then
 				resetMatchState()
+				chooseModifier()
 				prepareParticipationRewards()
+				matchStartedAt = os.clock()
 
 				activeMapModel = mapManager:PickRandomMap()
 				if activeMapModel then
@@ -372,10 +495,11 @@ function MatchService:Start()
 					task.wait(MATCH_CFG.StartDelay)
 
 					setState(states.RUNNING)
-					announce("Hot Potato started!")
+					announce("Hot Potato started! Modifier: " .. tostring(activeModifierConfig and activeModifierConfig.displayName or activeModifier))
 
 					while gameState == states.RUNNING do
 						currentRoundIndex += 1
+						modifierActiveThisRound = false
 						pushState()
 
 						if not potatoController:GetHolder() or not isAlive(potatoController:GetHolder()) then
@@ -390,6 +514,9 @@ function MatchService:Start()
 							duration = roundDuration,
 							aliveCount = getAliveCount(),
 							holderName = potatoController:GetHolder() and potatoController:GetHolder().Name or "",
+							modifier = activeModifier,
+							modifierLabel = activeModifierConfig and activeModifierConfig.displayName or activeModifier,
+							modifierDescription = activeModifierConfig and activeModifierConfig.description or "",
 						})
 
 						while os.clock() < roundEnd and gameState == states.RUNNING do
@@ -398,9 +525,13 @@ function MatchService:Start()
 
 							if not suddenDeathFired and remaining <= MATCH_CFG.SuddenDeathStart then
 								suddenDeathFired = true
+								applySuddenDeathModifier()
 								fireRoundEvent("sudden_death", {
 									remaining = remaining,
 									holderName = potatoController:GetHolder() and potatoController:GetHolder().Name or "",
+									modifier = activeModifier,
+									modifierLabel = activeModifierConfig and activeModifierConfig.displayName or activeModifier,
+									modifierDescription = activeModifierConfig and activeModifierConfig.description or "",
 								})
 							end
 
@@ -408,6 +539,7 @@ function MatchService:Start()
 						end
 
 						resolveBoom()
+						resetModifierEffects()
 						awardSurvivorsForRound()
 						pushState()
 
@@ -419,18 +551,41 @@ function MatchService:Start()
 							if winner then
 								rewardResolver:RecordMatchWin(winner)
 								announce("Ganador: " .. winner.Name)
-								rewardResolver:AwardXP(winner, REWARD_CFG.XP.WinMatch, "WinMatch", Players)
-								rewardResolver:AwardCoins(winner, REWARD_CFG.Coins.WinMatch, "WinMatch", Players)
+								rewardResolver:AwardXP(winner, getRewardAmount("WinMatch", "XP"), "WinMatch", Players)
+								rewardResolver:AwardCoins(winner, getRewardAmount("WinMatch", "Coins"), "WinMatch", Players)
 								missionRecord(winner, "WinMatch", 1)
 							else
 								announce("Partida terminada (sin ganador claro).")
 							end
 
 							for _, player in ipairs(Players:GetPlayers()) do
+								local profile = self.Data and self.Data:GetProfile(player)
+								local stats = profile and profile.Stats or nil
+								local unlocked = masteryService:Evaluate(player, stats)
+								local masterySnapshot = masteryService:BuildSnapshot(player, unlocked)
+								rewardResolver:SetMatchTelemetry(
+									activeModifierConfig and activeModifierConfig.displayName or activeModifier,
+									currentRoundIndex,
+									os.clock() - matchStartedAt
+								)
+
 								RE_MatchResult:FireClient(
 									player,
-									rewardResolver:BuildMatchResultPayload(player, winner, activeModifier, currentRoundIndex)
+									rewardResolver:BuildMatchResultPayload(
+										player,
+										winner,
+										activeModifierConfig and activeModifierConfig.displayName or activeModifier,
+										currentRoundIndex,
+										masterySnapshot
+									)
 								)
+								if #unlocked > 0 then
+									fireRoundEvent("mastery_unlocked", {
+										playerUserId = player.UserId,
+										playerName = player.Name,
+										unlocked = unlocked,
+									})
+								end
 							end
 
 							task.wait(MATCH_CFG.ResultDisplayTime)
@@ -447,6 +602,7 @@ function MatchService:Start()
 
 							break
 						else
+							resetModifierEffects()
 							potatoController:SetHolder(pickRandomAlivePlayer())
 							announce("Nueva ronda!")
 						end
