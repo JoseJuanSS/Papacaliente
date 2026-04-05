@@ -44,6 +44,10 @@ function MissionsController.Start(RemoteNames)
 		RE_MissionsRequest:FireServer()
 	end
 
+	UITheme.RegisterExclusivePanel("missions", panel, function()
+		requestRefresh()
+	end)
+
 	local function render(missionsData)
 		UITheme.ClearFrames(list)
 
@@ -115,13 +119,10 @@ function MissionsController.Start(RemoteNames)
 	end
 
 	toggle.MouseButton1Click:Connect(function()
-		panel.Visible = not panel.Visible
-		if panel.Visible then
-			requestRefresh()
-		end
+		UITheme.ToggleExclusivePanel("missions")
 	end)
 	close.MouseButton1Click:Connect(function()
-		panel.Visible = false
+		UITheme.SetExclusivePanelOpen("missions", false)
 	end)
 	dailyTab.MouseButton1Click:Connect(function()
 		setTab("Daily")

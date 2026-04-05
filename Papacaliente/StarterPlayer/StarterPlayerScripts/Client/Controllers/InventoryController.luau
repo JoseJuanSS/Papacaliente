@@ -25,6 +25,10 @@ function InventoryController.Start(RemoteNames)
 	local close = UITheme.CreateButton(panel, "CloseInventory", "Cerrar", UDim2.new(0, 92, 0, 34), UDim2.new(1, -108, 0, 14), false)
 	local list, layout = UITheme.CreateScrollFrame(panel, "InventoryList", UDim2.new(0, 14, 0, 80), UDim2.new(1, -28, 1, -94))
 
+	UITheme.RegisterExclusivePanel("inventory", panel, function()
+		RE_Request:FireServer()
+	end)
+
 	local function render(data)
 		UITheme.ClearFrames(list)
 
@@ -62,13 +66,10 @@ function InventoryController.Start(RemoteNames)
 	end
 
 	toggle.MouseButton1Click:Connect(function()
-		panel.Visible = not panel.Visible
-		if panel.Visible then
-			RE_Request:FireServer()
-		end
+		UITheme.ToggleExclusivePanel("inventory")
 	end)
 	close.MouseButton1Click:Connect(function()
-		panel.Visible = false
+		UITheme.SetExclusivePanelOpen("inventory", false)
 	end)
 
 	RE_Update.OnClientEvent:Connect(function(data)

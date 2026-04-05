@@ -36,6 +36,10 @@ function CratesController.Start(RemoteNames)
 
 	local isRolling = false
 
+	UITheme.RegisterExclusivePanel("crates", panel, function()
+		RE_CrateDataRequest:FireServer()
+	end)
+
 	local function render(data)
 		UITheme.ClearFrames(list)
 
@@ -73,13 +77,10 @@ function CratesController.Start(RemoteNames)
 	end
 
 	toggle.MouseButton1Click:Connect(function()
-		panel.Visible = not panel.Visible
-		if panel.Visible then
-			RE_CrateDataRequest:FireServer()
-		end
+		UITheme.ToggleExclusivePanel("crates")
 	end)
 	close.MouseButton1Click:Connect(function()
-		panel.Visible = false
+		UITheme.SetExclusivePanelOpen("crates", false)
 	end)
 
 	RE_CrateDataUpdate.OnClientEvent:Connect(function(data)

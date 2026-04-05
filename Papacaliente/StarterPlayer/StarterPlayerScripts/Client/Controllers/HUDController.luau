@@ -37,7 +37,7 @@ function HUDController.Start(RemoteNames)
 	}
 	local currentTimer = "-"
 	local logEntries = {}
-	local maxLogEntries = 5
+	local maxLogEntries = viewportInfo.mobile and 4 or 6
 
 	local topBarWidth = UITheme.Scale(viewportInfo.mobile and 240 or 290, viewportInfo)
 	local topBarHeight = UITheme.Scale(viewportInfo.mobile and 112 or 122, viewportInfo)
@@ -69,11 +69,10 @@ function HUDController.Start(RemoteNames)
 	local modLabel = UITheme.CreateBodyLabel(centerCard, "Modifier: -", UDim2.new(0, 16, 0, 132), UDim2.new(1, -32, 0, 18))
 	modLabel.TextSize = 14
 
-	local logWidth = viewportInfo.mobile and 300 or 360
-	local logHeight = viewportInfo.mobile and 132 or 176
+	local logWidth = viewportInfo.mobile and 320 or 420
+	local logHeight = viewportInfo.mobile and 150 or 208
 	local logSize = UDim2.new(0, UITheme.Scale(logWidth, viewportInfo), 0, UITheme.Scale(logHeight, viewportInfo))
-	local logPos
-	logPos = UDim2.new(0, UITheme.Scale(18, viewportInfo), 1, -(logSize.Y.Offset + UITheme.Scale(18, viewportInfo)))
+	local logPos = UITheme.GetLeftBottomPanelPosition(viewportInfo, logSize.X.Offset, logSize.Y.Offset, viewportInfo.mobile and 18 or 20)
 	local logPanel = UITheme.CreatePanel(screenGui, "HUDLogPanel", logSize, logPos)
 	local logTitle = UITheme.CreateSectionTitle(logPanel, "Bitacora", UDim2.new(0, 14, 0, 10), UDim2.new(1, -28, 0, 22))
 	logTitle.TextSize = 18

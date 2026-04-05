@@ -1,4 +1,5 @@
 local UITheme = {}
+local exclusivePanels = {}
 
 UITheme.Colors = {
 	Background = Color3.fromRGB(11, 16, 22),
@@ -71,6 +72,12 @@ function UITheme.GetLeftBottomTogglePosition(viewportInfo, index)
 	local spacing = viewportInfo and viewportInfo.mobile and 46 or 52
 	local left = viewportInfo and viewportInfo.mobile and 12 or 18
 	return UDim2.new(0, left, 1, -(bottomBase + ((index or 0) * spacing)))
+end
+
+function UITheme.GetLeftBottomPanelPosition(viewportInfo, width, height, bottomOffset)
+	local left = UITheme.Scale(viewportInfo and viewportInfo.mobile and 12 or 18, viewportInfo)
+	local bottom = UITheme.Scale(bottomOffset or 18, viewportInfo)
+	return UDim2.new(0, left, 1, -(height + bottom))
 end
 
 local function addCorner(instance, radius)
@@ -223,6 +230,52 @@ function UITheme.CreateCard(parent, size)
 	addCorner(card, 12)
 	addStroke(card, UITheme.Colors.Stroke, 0.45)
 	return card
+end
+
+function UITheme.RegisterExclusivePanel(key, panel, onOpen, onClose)
+	exclusivePanels[key] = {
+		panel = panel,
+		onOpen = onOpen,
+		onClose = onClose,
+	}
+end
+
+function UITheme.SetExclusivePanelOpen(key, shouldOpen)
+	local target = exclusivePanels[key]
+	if not target or not target.panel then
+		return
+	end
+
+	if not shouldOpen then
+		target.panel.Visible = false
+		if target.onClose then
+			target.onClose()
+		end
+		return
+	end
+
+	for otherKey, entry in pairs(exclusivePanels) do
+		if entry.panel and otherKey ~= key and entry.panel.Visible then
+			entry.panel.Visible = false
+			if entry.onClose then
+				entry.onClose()
+			end
+		end
+	end
+
+	target.panel.Visible = true
+	if target.onOpen then
+		target.onOpen()
+	end
+end
+
+function UITheme.ToggleExclusivePanel(key)
+	local target = exclusivePanels[key]
+	if not target or not target.panel then
+		return
+	end
+
+	UITheme.SetExclusivePanelOpen(key, not target.panel.Visible)
 end
 
 return UITheme

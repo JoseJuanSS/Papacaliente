@@ -15,7 +15,7 @@ function ShopController.Start(RemoteNames)
 	local screenGui = UITheme.GetScreenGui(player)
 	local viewportInfo = UITheme.GetViewportInfo()
 
-	local toggle = UITheme.CreateIconToggle(screenGui, "ShopToggle", "TIENDA  [B]", UITheme.GetLeftBottomTogglePosition(viewportInfo, 0))
+	local toggle = UITheme.CreateIconToggle(screenGui, "ShopToggle", "TIENDA  [B]", UITheme.GetRightTogglePosition(viewportInfo, 3))
 	local panelSize, panelPos = UITheme.GetCenteredPanelRect(viewportInfo, viewportInfo.mobile and 360 or 620, viewportInfo.mobile and 500 or 440)
 	local panel = UITheme.CreatePanel(screenGui, "ShopPanel", panelSize, panelPos)
 	panel.Visible = false
@@ -32,6 +32,10 @@ function ShopController.Start(RemoteNames)
 
 	local list, layout = UITheme.CreateScrollFrame(panel, "ShopList", UDim2.new(0, 14, 0, 104), UDim2.new(1, -28, 1, -118))
 	local state = { catalog = {}, owned = {}, equipped = {}, coins = 0, totalPoints = 0 }
+
+	UITheme.RegisterExclusivePanel("shop", panel, function()
+		RE_ShopRequest:FireServer("Get")
+	end)
 
 	local function isEquipped(item)
 		if item.slot == "Aura" then
@@ -88,24 +92,17 @@ function ShopController.Start(RemoteNames)
 		UITheme.RefreshCanvas(list, layout, 10)
 	end
 
-	local function togglePanel(open)
-		panel.Visible = open
-		if open then
-			RE_ShopRequest:FireServer("Get")
-		end
-	end
-
 	toggle.MouseButton1Click:Connect(function()
-		togglePanel(not panel.Visible)
+		UITheme.ToggleExclusivePanel("shop")
 	end)
 	close.MouseButton1Click:Connect(function()
-		togglePanel(false)
+		UITheme.SetExclusivePanelOpen("shop", false)
 	end)
 
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end
 		if input.KeyCode == Enum.KeyCode.B then
-			togglePanel(not panel.Visible)
+			UITheme.ToggleExclusivePanel("shop")
 		end
 	end)
 
