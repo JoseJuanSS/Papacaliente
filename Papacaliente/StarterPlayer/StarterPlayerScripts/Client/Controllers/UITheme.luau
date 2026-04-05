@@ -61,8 +61,8 @@ function UITheme.GetBottomCenterRect(viewportInfo, width, height, bottomOffset)
 end
 
 function UITheme.GetRightTogglePosition(viewportInfo, index)
-	local topBase = viewportInfo and viewportInfo.mobile and 18 or 18
-	local spacing = viewportInfo and viewportInfo.mobile and 44 or 50
+	local topBase = viewportInfo and viewportInfo.mobile and 88 or 32
+	local spacing = viewportInfo and viewportInfo.mobile and 48 or 54
 	local right = viewportInfo and viewportInfo.mobile and 150 or 202
 	return UDim2.new(1, -right, 0, topBase + ((index or 0) * spacing))
 end

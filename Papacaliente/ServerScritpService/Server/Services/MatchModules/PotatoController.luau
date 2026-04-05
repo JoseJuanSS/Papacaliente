@@ -10,6 +10,12 @@ function PotatoController.new(config, callbacks)
 end
 
 function PotatoController:Reset()
+	for _, connection in pairs(self.TouchConnections or {}) do
+		connection:Disconnect()
+	end
+	for _, connection in pairs(self.CharacterConnections or {}) do
+		connection:Disconnect()
+	end
 	self.Holder = nil
 	self.HolderAssignedAt = nil
 	self.PotatoTouchedAt = 0
@@ -138,11 +144,14 @@ function PotatoController:TransferTo(player)
 end
 
 function PotatoController:GetHRP(player)
-	local character = player.Character
+	local character = player and player.Character
 	return character and character:FindFirstChild("HumanoidRootPart") or nil
 end
 
 function PotatoController:DisconnectTouch(player)
+	if not player then
+		return
+	end
 	local userId = player.UserId
 
 	if self.TouchConnections[userId] then
@@ -157,7 +166,7 @@ function PotatoController:DisconnectTouch(player)
 end
 
 function PotatoController:ConnectTouch(player)
-	if not player or not player:IsA("Player") then
+	if not player or type(player.UserId) ~= "number" then
 		return
 	end
 
@@ -208,21 +217,23 @@ function PotatoController:ConnectTouch(player)
 		tryBind()
 	end
 
-	self.CharacterConnections[player.UserId] = player.CharacterAdded:Connect(function()
-		task.wait(0.2)
-		tryBind()
+	if player.CharacterAdded and typeof(player.CharacterAdded.Connect) == "function" then
+		self.CharacterConnections[player.UserId] = player.CharacterAdded:Connect(function()
+			task.wait(0.2)
+			tryBind()
 
-		if self.Callbacks.IsRunning and self.Callbacks.IsRunning() then
-			self:SetSpawnTransferBlock(player, self.Config.SpawnNoPassWindow)
-		end
+			if self.Callbacks.IsRunning and self.Callbacks.IsRunning() then
+				self:SetSpawnTransferBlock(player, self.Config.SpawnNoPassWindow)
+			end
 
-		if self.Holder == player then
-			task.defer(function()
-				task.wait(0.1)
-				self:ApplyPotatoFx(player)
-			end)
-		end
-	end)
+			if self.Holder == player then
+				task.defer(function()
+					task.wait(0.1)
+					self:ApplyPotatoFx(player)
+				end)
+			end
+		end)
+	end
 end
 
 function PotatoController:ConnectAll(players)

@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local GameConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("GameConfig"))
 local MapManager = require(script.Parent.MatchModules.MapManager)
 local LiveOpsService = require(script.Parent.MatchModules.LiveOpsService)
+local MatchBotService = require(script.Parent.MatchModules.MatchBotService)
 local PotatoController = require(script.Parent.MatchModules.PotatoController)
 local RewardResolver = require(script.Parent.MatchModules.RewardResolver)
 local SpectatorManager = require(script.Parent.MatchModules.SpectatorManager)
@@ -41,6 +42,7 @@ function MatchService:Start()
 
 	local mapManager = MapManager.new(workspace)
 	local liveOpsService = LiveOpsService.new(LIVEOPS_CFG)
+	local botService = MatchBotService.new(MATCH_CFG)
 	local rewardResolver = RewardResolver.new(self.Economy, remotes, RN, self.Data)
 	local masteryService = MasteryService.new(self.Data)
 	local gameState = states.LOBBY
@@ -72,8 +74,35 @@ function MatchService:Start()
 	end
 
 	local function getHumanoid(player)
-		local character = player.Character
+		local character = player and player.Character
 		return character and character:FindFirstChildOfClass("Humanoid") or nil
+	end
+
+	local function getHumanPlayers()
+		return Players:GetPlayers()
+	end
+
+	local function getBotParticipant()
+		return botService:GetParticipant()
+	end
+
+	local function getParticipants()
+		local list = {}
+		for _, player in ipairs(getHumanPlayers()) do
+			table.insert(list, player)
+		end
+		local botParticipant = getBotParticipant()
+		if botParticipant then
+			table.insert(list, botParticipant)
+		end
+		return list
+	end
+
+	local function getRealWinner(participant)
+		if participant and participant.IsBot then
+			return nil
+		end
+		return participant
 	end
 
 	local function isEliminated(player)
@@ -82,8 +111,11 @@ function MatchService:Start()
 
 	local function isAlive(player)
 		if not player then return false end
-		if player.Parent ~= Players then return false end
 		if isEliminated(player) then return false end
+		if player.IsBot then
+			return botService:IsAlive(player)
+		end
+		if player.Parent ~= Players then return false end
 
 		local humanoid = getHumanoid(player)
 		return humanoid and humanoid.Health > 0
@@ -91,7 +123,7 @@ function MatchService:Start()
 
 	local function getAlivePlayers()
 		local list = {}
-		for _, player in ipairs(Players:GetPlayers()) do
+		for _, player in ipairs(getParticipants()) do
 			if isAlive(player) then
 				table.insert(list, player)
 			end
@@ -147,6 +179,16 @@ function MatchService:Start()
 		end,
 	})
 
+	botService:StartThinking({
+		IsRunning = function()
+			return gameState == states.RUNNING
+		end,
+		GetHolder = function()
+			return potatoController:GetHolder()
+		end,
+		GetAliveParticipants = getAlivePlayers,
+	})
+
 	local function setState(state)
 		gameState = state
 		pushState()
@@ -183,12 +225,17 @@ function MatchService:Start()
 
 	local function resetModifierEffects()
 		modifierActiveThisRound = false
-		for _, player in ipairs(Players:GetPlayers()) do
+		for _, player in ipairs(getParticipants()) do
 			local humanoid = getHumanoid(player)
 			if humanoid then
 				if not isEliminated(player) then
-					humanoid.WalkSpeed = 16
-					pcall(function() humanoid.JumpPower = 50 end)
+					if player.IsBot then
+						humanoid.WalkSpeed = MATCH_CFG.BotWalkSpeed or MATCH_CFG.BaseWalkSpeed or 18
+						pcall(function() humanoid.JumpPower = MATCH_CFG.BotJumpPower or MATCH_CFG.BaseJumpPower or 55 end)
+					else
+						humanoid.WalkSpeed = MATCH_CFG.BaseWalkSpeed or 18
+						pcall(function() humanoid.JumpPower = MATCH_CFG.BaseJumpPower or 55 end)
+					end
 				end
 			end
 		end
@@ -223,6 +270,19 @@ function MatchService:Start()
 
 	local function moveCharacter(player, cf, applyNoPassWindow)
 		task.spawn(function()
+			if player.IsBot then
+				botService:MoveTo(cf)
+				local humanoid = getHumanoid(player)
+				if humanoid then
+					humanoid.WalkSpeed = MATCH_CFG.BotWalkSpeed or MATCH_CFG.BaseWalkSpeed or 18
+					pcall(function() humanoid.JumpPower = MATCH_CFG.BotJumpPower or MATCH_CFG.BaseJumpPower or 55 end)
+				end
+				if applyNoPassWindow then
+					potatoController:SetSpawnTransferBlock(player, MATCH_CFG.SpawnNoPassWindow)
+				end
+				return
+			end
+
 			if not player.Character then
 				player:LoadCharacter()
 			end
@@ -231,6 +291,11 @@ function MatchService:Start()
 			local hrp = character:WaitForChild("HumanoidRootPart", 5)
 			if hrp then
 				character:PivotTo(cf)
+				local humanoid = getHumanoid(player)
+				if humanoid then
+					humanoid.WalkSpeed = MATCH_CFG.BaseWalkSpeed or 18
+					pcall(function() humanoid.JumpPower = MATCH_CFG.BaseJumpPower or 55 end)
+				end
 				if applyNoPassWindow then
 					potatoController:SetSpawnTransferBlock(player, MATCH_CFG.SpawnNoPassWindow)
 				end
@@ -242,7 +307,7 @@ function MatchService:Start()
 		local lobbySpawn = mapManager:GetLobbySpawn()
 		if not lobbySpawn then return end
 
-		for _, player in ipairs(Players:GetPlayers()) do
+		for _, player in ipairs(getParticipants()) do
 			moveCharacter(player, lobbySpawn.CFrame + Vector3.new(0, 5, 0), false)
 		end
 	end
@@ -259,7 +324,9 @@ function MatchService:Start()
 			warn("[MatchService] Usando fallback de mapa: " .. tostring(sourceName))
 		end
 
-		for _, player in ipairs(Players:GetPlayers()) do
+		botService:SetArenaOrigin(cf)
+
+		for _, player in ipairs(getParticipants()) do
 			if not isEliminated(player) then
 				moveCharacter(player, cf + Vector3.new(0, 5, 0), true)
 			end
@@ -283,7 +350,9 @@ function MatchService:Start()
 
 		eliminated[player.UserId] = true
 		rewardResolver:RecordElimination()
-		spectatorManager:SetSpectator(player, true)
+		if not player.IsBot then
+			spectatorManager:SetSpectator(player, true)
+		end
 		potatoController:ClearPotatoFx(player)
 
 		if reason then
@@ -301,7 +370,28 @@ function MatchService:Start()
 	end
 
 	local function canStart()
-		return #Players:GetPlayers() >= MATCH_CFG.MinPlayers
+		local humanCount = #getHumanPlayers()
+		if MATCH_CFG.BotEnabled and humanCount > 0 and humanCount < MATCH_CFG.MinPlayers then
+			return true
+		end
+		return humanCount >= MATCH_CFG.MinPlayers
+	end
+
+	local function syncBotForLobby()
+		local lobbySpawn = mapManager:GetLobbySpawn()
+		local humanCount = #getHumanPlayers()
+		local shouldUseBot = MATCH_CFG.BotEnabled and humanCount > 0 and humanCount < MATCH_CFG.MinPlayers
+		local spawnCFrame = lobbySpawn and (lobbySpawn.CFrame + Vector3.new(0, 5, 0)) or CFrame.new(0, 6, 0)
+		local botParticipant = botService.Participant
+		botService:EnsurePresence(shouldUseBot, spawnCFrame)
+		if shouldUseBot then
+			potatoController:ConnectTouch(getBotParticipant())
+		else
+			if botParticipant then
+				potatoController:DisconnectTouch(botParticipant)
+				potatoController:ClearTransferBlock(botParticipant)
+			end
+		end
 	end
 
 	local function getRoundDuration()
@@ -338,7 +428,7 @@ function MatchService:Start()
 		rewardResolver:Reset()
 		potatoController:Reset()
 
-		for _, player in ipairs(Players:GetPlayers()) do
+		for _, player in ipairs(getHumanPlayers()) do
 			spectatorManager:SetSpectator(player, false)
 		end
 	end
@@ -358,10 +448,12 @@ function MatchService:Start()
 
 	local function awardSurvivorsForRound()
 		for _, survivor in ipairs(getAlivePlayers()) do
-			rewardResolver:RecordRoundSurvived(survivor)
-			rewardResolver:AwardXP(survivor, getRewardAmount("SurviveRound", "XP"), "SurviveRound", Players)
-			rewardResolver:AwardCoins(survivor, getRewardAmount("SurviveRound", "Coins"), "SurviveRound", Players)
-			missionRecord(survivor, "SurviveRound", 1)
+			if not survivor.IsBot then
+				rewardResolver:RecordRoundSurvived(survivor)
+				rewardResolver:AwardXP(survivor, getRewardAmount("SurviveRound", "XP"), "SurviveRound", Players)
+				rewardResolver:AwardCoins(survivor, getRewardAmount("SurviveRound", "Coins"), "SurviveRound", Players)
+				missionRecord(survivor, "SurviveRound", 1)
+			end
 		end
 	end
 
@@ -413,8 +505,8 @@ function MatchService:Start()
 
 			local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
 			if humanoid then
-				humanoid.WalkSpeed = 16
-				pcall(function() humanoid.JumpPower = 50 end)
+				humanoid.WalkSpeed = MATCH_CFG.BaseWalkSpeed or 18
+				pcall(function() humanoid.JumpPower = MATCH_CFG.BaseJumpPower or 55 end)
 				humanoid.AutoRotate = true
 			end
 		elseif action == "BackToSpectate" then
@@ -426,6 +518,9 @@ function MatchService:Start()
 	Players.PlayerAdded:Connect(function(player)
 		liveOpsService:RegisterPlayer(player)
 		potatoController:ConnectTouch(player)
+		if gameState ~= states.RUNNING then
+			syncBotForLobby()
+		end
 
 		if gameState == states.RUNNING then
 			eliminated[player.UserId] = true
@@ -445,6 +540,9 @@ function MatchService:Start()
 
 		potatoController:DisconnectTouch(player)
 		potatoController:ClearTransferBlock(player)
+		if gameState ~= states.RUNNING then
+			syncBotForLobby()
+		end
 
 		if potatoController:GetHolder() == player then
 			potatoController:SetHolder(nil)
@@ -467,10 +565,17 @@ function MatchService:Start()
 						task.wait(1)
 					end
 				else
+					syncBotForLobby()
 					task.wait(1)
 				end
 			elseif gameState == states.INTERMISSION then
 				resetMatchState()
+				syncBotForLobby()
+				if not canStart() then
+					setState(states.LOBBY)
+					task.wait(1)
+					continue
+				end
 				chooseModifier()
 				prepareParticipationRewards()
 				matchStartedAt = os.clock()
@@ -497,7 +602,7 @@ function MatchService:Start()
 					activeMapModel = mapManager:DeactivateMap(activeMapModel)
 					task.wait(1)
 				else
-					potatoController:ConnectAll(Players:GetPlayers())
+					potatoController:ConnectAll(getParticipants())
 					task.wait(MATCH_CFG.StartDelay)
 
 					setState(states.RUNNING)
@@ -552,14 +657,17 @@ function MatchService:Start()
 						local alive = getAlivePlayers()
 						if #alive <= 1 then
 							local winner = (#alive == 1) and alive[1] or nil
+							local realWinner = getRealWinner(winner)
 							setState(states.RESULT)
 
 							if winner then
-								rewardResolver:RecordMatchWin(winner)
 								announce("Ganador: " .. winner.Name)
-								rewardResolver:AwardXP(winner, getRewardAmount("WinMatch", "XP"), "WinMatch", Players)
-								rewardResolver:AwardCoins(winner, getRewardAmount("WinMatch", "Coins"), "WinMatch", Players)
-								missionRecord(winner, "WinMatch", 1)
+								if realWinner then
+									rewardResolver:RecordMatchWin(realWinner)
+									rewardResolver:AwardXP(realWinner, getRewardAmount("WinMatch", "XP"), "WinMatch", Players)
+									rewardResolver:AwardCoins(realWinner, getRewardAmount("WinMatch", "Coins"), "WinMatch", Players)
+									missionRecord(realWinner, "WinMatch", 1)
+								end
 							else
 								announce("Partida terminada (sin ganador claro).")
 							end
@@ -599,7 +707,7 @@ function MatchService:Start()
 									player,
 									rewardResolver:BuildMatchResultPayload(
 										player,
-										winner,
+										realWinner or winner,
 										activeModifierConfig and activeModifierConfig.displayName or activeModifier,
 										currentRoundIndex,
 										masterySnapshot,
@@ -623,7 +731,7 @@ function MatchService:Start()
 							activeMapModel = mapManager:DeactivateMap(activeMapModel)
 
 							eliminated = {}
-							for _, player in ipairs(Players:GetPlayers()) do
+							for _, player in ipairs(getHumanPlayers()) do
 								spectatorManager:SetSpectator(player, false)
 							end
 
@@ -641,6 +749,7 @@ function MatchService:Start()
 		end
 	end)
 
+	syncBotForLobby()
 	teleportAllToLobby()
 	setState(states.LOBBY)
 end

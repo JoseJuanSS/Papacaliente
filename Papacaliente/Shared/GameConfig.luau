@@ -13,11 +13,22 @@ GameConfig.Match = {
 	RoundTime = 10,
 	FinalRoundTime = 8,
 	FinalRoundPlayerThreshold = 3,
+	BaseWalkSpeed = 18,
+	BaseJumpPower = 55,
 	TouchCooldown = 1.2,
 	SpawnNoPassWindow = 1.5,
 	SuddenDeathStart = 3,
 	DefaultModifier = "Classic",
 	ResultDisplayTime = 2,
+	BotEnabled = true,
+	BotName = "BOT",
+	BotUserId = -1001,
+	BotWalkSpeed = 18.5,
+	BotJumpPower = 55,
+	BotThinkInterval = 0.35,
+	BotChaseDistance = 18,
+	BotEscapeDistance = 24,
+	BotArenaRadius = 48,
 }
 
 GameConfig.Modifiers = {

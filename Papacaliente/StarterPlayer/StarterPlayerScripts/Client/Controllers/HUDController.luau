@@ -37,11 +37,16 @@ function HUDController.Start(RemoteNames)
 	}
 	local currentTimer = "-"
 	local logEntries = {}
-	local maxLogEntries = viewportInfo.mobile and 4 or 6
+	local maxLogEntries = viewportInfo.mobile and 5 or 7
 
-	local topBarWidth = UITheme.Scale(viewportInfo.mobile and 240 or 290, viewportInfo)
+	local topBarWidth = UITheme.Scale(viewportInfo.mobile and 250 or 290, viewportInfo)
 	local topBarHeight = UITheme.Scale(viewportInfo.mobile and 112 or 122, viewportInfo)
-	local topBar = UITheme.CreatePanel(screenGui, "HUDTopBar", UDim2.new(0, topBarWidth, 0, topBarHeight), UDim2.new(0, UITheme.Scale(18, viewportInfo), 0, UITheme.Scale(18, viewportInfo)))
+	local topBar = UITheme.CreatePanel(
+		screenGui,
+		"HUDTopBar",
+		UDim2.new(0, topBarWidth, 0, topBarHeight),
+		UDim2.new(0, UITheme.Scale(viewportInfo.mobile and 14 or 18, viewportInfo), 0, UITheme.Scale(viewportInfo.mobile and 84 or 22, viewportInfo))
+	)
 	local coinsLabel = UITheme.CreateSectionTitle(topBar, "Coins: -", UDim2.new(0, 14, 0, 12), UDim2.new(1, -28, 0, 22))
 	coinsLabel.TextSize = 18
 	local pointsLabel = UITheme.CreateBodyLabel(topBar, "Points: -", UDim2.new(0, 14, 0, 42), UDim2.new(1, -28, 0, 20))
@@ -69,16 +74,17 @@ function HUDController.Start(RemoteNames)
 	local modLabel = UITheme.CreateBodyLabel(centerCard, "Modifier: -", UDim2.new(0, 16, 0, 132), UDim2.new(1, -32, 0, 18))
 	modLabel.TextSize = 14
 
-	local logWidth = viewportInfo.mobile and 320 or 420
-	local logHeight = viewportInfo.mobile and 150 or 208
+	local logWidth = viewportInfo.mobile and 350 or 520
+	local logHeight = viewportInfo.mobile and 176 or 244
 	local logSize = UDim2.new(0, UITheme.Scale(logWidth, viewportInfo), 0, UITheme.Scale(logHeight, viewportInfo))
 	local logPos = UITheme.GetLeftBottomPanelPosition(viewportInfo, logSize.X.Offset, logSize.Y.Offset, viewportInfo.mobile and 18 or 20)
 	local logPanel = UITheme.CreatePanel(screenGui, "HUDLogPanel", logSize, logPos)
 	local logTitle = UITheme.CreateSectionTitle(logPanel, "Bitacora", UDim2.new(0, 14, 0, 10), UDim2.new(1, -28, 0, 22))
 	logTitle.TextSize = 18
 	local logList, logLayout = UITheme.CreateScrollFrame(logPanel, "LogList", UDim2.new(0, 12, 0, 38), UDim2.new(1, -24, 1, -50))
-	logList.BackgroundTransparency = 1
-	logList.ScrollBarThickness = 4
+	logList.BackgroundColor3 = palette.Panel
+	logList.BackgroundTransparency = 0.04
+	logList.ScrollBarThickness = 6
 
 	local masterySize, masteryPos = UITheme.GetCenteredPanelRect(viewportInfo, viewportInfo.mobile and 320 or 360, 44)
 	masteryPos = UDim2.new(masteryPos.X.Scale, masteryPos.X.Offset, 0, UITheme.Scale(viewportInfo.mobile and 174 or 194, viewportInfo))
@@ -147,8 +153,8 @@ function HUDController.Start(RemoteNames)
 	local function renderLog()
 		UITheme.ClearFrames(logList)
 		for _, item in ipairs(logEntries) do
-			local row = UITheme.CreateCard(logList, UDim2.new(1, -4, 0, 26))
-			row.BackgroundTransparency = 0.2
+			local row = UITheme.CreateCard(logList, UDim2.new(1, -4, 0, viewportInfo.mobile and 34 or 30))
+			row.BackgroundTransparency = 0.02
 
 			local dot = Instance.new("Frame")
 			dot.Size = UDim2.new(0, 8, 0, 8)
@@ -161,7 +167,7 @@ function HUDController.Start(RemoteNames)
 			dotCorner.Parent = dot
 
 			local label = UITheme.CreateBodyLabel(row, item.text, UDim2.new(0, 24, 0, 4), UDim2.new(1, -32, 1, -8))
-			label.TextSize = 13
+			label.TextSize = viewportInfo.mobile and 14 or 13
 			label.TextColor3 = palette.Text
 		end
 		UITheme.RefreshCanvas(logList, logLayout, 8)
