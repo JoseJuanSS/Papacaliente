@@ -21,6 +21,58 @@ UITheme.Fonts = {
 	Body = Enum.Font.Gotham,
 }
 
+function UITheme.GetViewportInfo()
+	local camera = workspace.CurrentCamera
+	local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
+	local mobile = viewport.X <= 820
+	local compact = viewport.X <= 1120
+	return {
+		size = viewport,
+		mobile = mobile,
+		compact = compact,
+		scale = mobile and 0.84 or (compact and 0.94 or 1),
+	}
+end
+
+function UITheme.Scale(value, viewportInfo)
+	return math.floor((tonumber(value) or 0) * ((viewportInfo and viewportInfo.scale) or 1) + 0.5)
+end
+
+function UITheme.GetCenteredPanelRect(viewportInfo, width, height)
+	local w = UITheme.Scale(width, viewportInfo)
+	local h = UITheme.Scale(height, viewportInfo)
+	return UDim2.new(0, w, 0, h), UDim2.new(0.5, -math.floor(w / 2), 0.5, -math.floor(h / 2))
+end
+
+function UITheme.GetRightPanelRect(viewportInfo, width, height, topOffset)
+	local w = UITheme.Scale(width, viewportInfo)
+	local h = UITheme.Scale(height, viewportInfo)
+	local top = UITheme.Scale(topOffset or 80, viewportInfo)
+	local rightMargin = UITheme.Scale(viewportInfo and viewportInfo.mobile and 12 or 18, viewportInfo)
+	return UDim2.new(0, w, 0, h), UDim2.new(1, -(w + rightMargin), 0, top)
+end
+
+function UITheme.GetBottomCenterRect(viewportInfo, width, height, bottomOffset)
+	local w = UITheme.Scale(width, viewportInfo)
+	local h = UITheme.Scale(height, viewportInfo)
+	local bottom = UITheme.Scale(bottomOffset or 16, viewportInfo)
+	return UDim2.new(0, w, 0, h), UDim2.new(0.5, -math.floor(w / 2), 1, -(h + bottom))
+end
+
+function UITheme.GetRightTogglePosition(viewportInfo, index)
+	local topBase = viewportInfo and viewportInfo.mobile and 18 or 18
+	local spacing = viewportInfo and viewportInfo.mobile and 44 or 50
+	local right = viewportInfo and viewportInfo.mobile and 150 or 202
+	return UDim2.new(1, -right, 0, topBase + ((index or 0) * spacing))
+end
+
+function UITheme.GetLeftBottomTogglePosition(viewportInfo, index)
+	local bottomBase = viewportInfo and viewportInfo.mobile and 62 or 68
+	local spacing = viewportInfo and viewportInfo.mobile and 46 or 52
+	local left = viewportInfo and viewportInfo.mobile and 12 or 18
+	return UDim2.new(0, left, 1, -(bottomBase + ((index or 0) * spacing)))
+end
+
 local function addCorner(instance, radius)
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, radius or 12)

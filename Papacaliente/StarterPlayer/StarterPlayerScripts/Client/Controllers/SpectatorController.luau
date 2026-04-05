@@ -14,7 +14,9 @@ function SpectatorController.Start(RemoteNames)
 	local RE_SpectatorAction = remotes:WaitForChild(RemoteNames.SpectatorAction)
 
 	local screenGui = UITheme.GetScreenGui(player)
-	local panel = UITheme.CreatePanel(screenGui, "SpectatorPanel", UDim2.new(0, 320, 0, 118), UDim2.new(0.5, -160, 1, -136))
+	local viewportInfo = UITheme.GetViewportInfo()
+	local panelSize, panelPos = UITheme.GetBottomCenterRect(viewportInfo, viewportInfo.mobile and 320 or 360, viewportInfo.mobile and 126 or 118, 18)
+	local panel = UITheme.CreatePanel(screenGui, "SpectatorPanel", panelSize, panelPos)
 	panel.Visible = false
 	local title = UITheme.CreateSectionTitle(panel, "Espectador", UDim2.new(0, 14, 0, 12), UDim2.new(1, -28, 0, 22))
 	title.TextSize = 18

@@ -21,8 +21,10 @@ function MissionsController.Start(RemoteNames)
 	local RE_MissionsRequest = remotes:WaitForChild(RemoteNames.MissionsRequest)
 
 	local screenGui = UITheme.GetScreenGui(player)
-	local toggle = UITheme.CreateIconToggle(screenGui, "MissionsToggle", "MISIONES", UDim2.new(1, -202, 0, 18))
-	local panel = UITheme.CreatePanel(screenGui, "MissionsPanel", UDim2.new(0, 540, 0, 430), UDim2.new(1, -558, 0, 64))
+	local viewportInfo = UITheme.GetViewportInfo()
+	local toggle = UITheme.CreateIconToggle(screenGui, "MissionsToggle", "MISIONES", UITheme.GetRightTogglePosition(viewportInfo, 0))
+	local panelSize, panelPos = UITheme.GetRightPanelRect(viewportInfo, viewportInfo.mobile and 350 or 540, viewportInfo.mobile and 470 or 430, 64)
+	local panel = UITheme.CreatePanel(screenGui, "MissionsPanel", panelSize, panelPos)
 	panel.Visible = false
 
 	local title = UITheme.CreateSectionTitle(panel, "Misiones", UDim2.new(0, 16, 0, 14), UDim2.new(1, -120, 0, 26))
@@ -71,7 +73,7 @@ function MissionsController.Start(RemoteNames)
 		end
 
 		for _, mission in ipairs(entries) do
-			local row = UITheme.CreateCard(list, UDim2.new(1, -4, 0, 92))
+			local row = UITheme.CreateCard(list, UDim2.new(1, -4, 0, viewportInfo.mobile and 108 or 92))
 			local titleLabel = UITheme.CreateSectionTitle(row, tostring(mission.title or mission.id or "Mision"), UDim2.new(0, 12, 0, 10), UDim2.new(1, -138, 0, 20))
 			titleLabel.TextSize = 15
 			local progress = UITheme.CreateBodyLabel(row, "Progreso: " .. fmtProgress(mission.progress, mission.target), UDim2.new(0, 12, 0, 36), UDim2.new(1, -138, 0, 18))

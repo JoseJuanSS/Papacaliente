@@ -13,8 +13,10 @@ function InventoryController.Start(RemoteNames)
 	local RE_Equip = remotes:WaitForChild(RemoteNames.InventoryEquip)
 
 	local screenGui = UITheme.GetScreenGui(player)
-	local toggle = UITheme.CreateIconToggle(screenGui, "InventoryToggle", "INVENTARIO", UDim2.new(1, -202, 0, 118))
-	local panel = UITheme.CreatePanel(screenGui, "InventoryPanel", UDim2.new(0, 460, 0, 430), UDim2.new(1, -478, 0, 164))
+	local viewportInfo = UITheme.GetViewportInfo()
+	local toggle = UITheme.CreateIconToggle(screenGui, "InventoryToggle", "INVENTARIO", UITheme.GetRightTogglePosition(viewportInfo, 2))
+	local panelSize, panelPos = UITheme.GetRightPanelRect(viewportInfo, viewportInfo.mobile and 340 or 460, viewportInfo.mobile and 420 or 430, viewportInfo.mobile and 110 or 164)
+	local panel = UITheme.CreatePanel(screenGui, "InventoryPanel", panelSize, panelPos)
 	panel.Visible = false
 
 	local title = UITheme.CreateSectionTitle(panel, "Inventario", UDim2.new(0, 16, 0, 14), UDim2.new(1, -120, 0, 26))
@@ -29,7 +31,7 @@ function InventoryController.Start(RemoteNames)
 		for itemType, items in pairs(data.Inventory or {}) do
 			for itemId, owned in pairs(items) do
 				if owned == true then
-					local row = UITheme.CreateCard(list, UDim2.new(1, -4, 0, 64))
+					local row = UITheme.CreateCard(list, UDim2.new(1, -4, 0, viewportInfo.mobile and 78 or 64))
 					local titleLabel = UITheme.CreateSectionTitle(row, itemId, UDim2.new(0, 12, 0, 10), UDim2.new(0.62, -8, 0, 18))
 					titleLabel.TextSize = 15
 					local meta = UITheme.CreateBodyLabel(row, itemType, UDim2.new(0, 12, 0, 34), UDim2.new(0.62, -8, 0, 18))

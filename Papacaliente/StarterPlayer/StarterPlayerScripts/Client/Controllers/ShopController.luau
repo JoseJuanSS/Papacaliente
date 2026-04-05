@@ -13,14 +13,15 @@ function ShopController.Start(RemoteNames)
 	local RE_ShopUpdate = remotes:WaitForChild(RemoteNames.ShopUpdate)
 
 	local screenGui = UITheme.GetScreenGui(player)
-	local palette = UITheme.Colors
+	local viewportInfo = UITheme.GetViewportInfo()
 
-	local toggle = UITheme.CreateIconToggle(screenGui, "ShopToggle", "TIENDA  [B]", UDim2.new(0, 18, 1, -68))
-	local panel = UITheme.CreatePanel(screenGui, "ShopPanel", UDim2.new(0, 620, 0, 440), UDim2.new(0.5, -310, 0.5, -220))
+	local toggle = UITheme.CreateIconToggle(screenGui, "ShopToggle", "TIENDA  [B]", UITheme.GetLeftBottomTogglePosition(viewportInfo, 0))
+	local panelSize, panelPos = UITheme.GetCenteredPanelRect(viewportInfo, viewportInfo.mobile and 360 or 620, viewportInfo.mobile and 500 or 440)
+	local panel = UITheme.CreatePanel(screenGui, "ShopPanel", panelSize, panelPos)
 	panel.Visible = false
 
 	local title = UITheme.CreateSectionTitle(panel, "Tienda", UDim2.new(0, 16, 0, 14), UDim2.new(1, -120, 0, 26))
-	local subtitle = UITheme.CreateBodyLabel(panel, "Cosmeticos por coins. Compra y equipa desde aqui.", UDim2.new(0, 16, 0, 42), UDim2.new(1, -140, 0, 18))
+	local subtitle = UITheme.CreateBodyLabel(panel, "Cosmeticos por coins. Compra y equipa desde aqui.", UDim2.new(0, 16, 0, 42), UDim2.new(1, -140, 0, viewportInfo.mobile and 30 or 18))
 	subtitle.TextSize = 14
 	local close = UITheme.CreateButton(panel, "CloseShop", "Cerrar", UDim2.new(0, 92, 0, 34), UDim2.new(1, -108, 0, 14), false)
 
@@ -48,14 +49,14 @@ function ShopController.Start(RemoteNames)
 		UITheme.ClearFrames(list)
 
 		for _, item in ipairs(state.catalog or {}) do
-			local row = UITheme.CreateCard(list, UDim2.new(1, -4, 0, 74))
+			local row = UITheme.CreateCard(list, UDim2.new(1, -4, 0, viewportInfo.mobile and 92 or 74))
 			local name = UITheme.CreateSectionTitle(row, item.name or item.id, UDim2.new(0, 12, 0, 10), UDim2.new(0.62, -8, 0, 20))
 			name.TextSize = 16
 			local meta = UITheme.CreateBodyLabel(
 				row,
 				("%s | %s | %d coins"):format(tostring(item.slot or "?"), tostring(item.rarity or "?"), tonumber(item.price) or 0),
 				UDim2.new(0, 12, 0, 36),
-				UDim2.new(0.62, -8, 0, 18)
+				UDim2.new(viewportInfo.mobile and 1 or 0.62, viewportInfo.mobile and -24 or -8, 0, viewportInfo.mobile and 34 or 18)
 			)
 			meta.TextSize = 14
 
@@ -69,7 +70,7 @@ function ShopController.Start(RemoteNames)
 				accent = not equipped
 			end
 
-			local action = UITheme.CreateButton(row, "Action", buttonText, UDim2.new(0, 132, 0, 38), UDim2.new(1, -144, 0.5, -19), accent)
+			local action = UITheme.CreateButton(row, "Action", buttonText, UDim2.new(0, viewportInfo.mobile and 110 or 132, 0, 38), UDim2.new(1, viewportInfo.mobile and -122 or -144, 0.5, -19), accent)
 			if not owned then
 				action.MouseButton1Click:Connect(function()
 					RE_ShopRequest:FireServer("Buy", item.id)

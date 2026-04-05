@@ -9,6 +9,7 @@ local HUDController = {}
 function HUDController.Start(RemoteNames)
 	local player = Players.LocalPlayer
 	local screenGui = UITheme.GetScreenGui(player)
+	local viewportInfo = UITheme.GetViewportInfo()
 
 	local remotesFolderName = RemoteNames.RemotesFolder
 	local remotes = ReplicatedStorage:FindFirstChild(remotesFolderName)
@@ -38,7 +39,9 @@ function HUDController.Start(RemoteNames)
 	local logEntries = {}
 	local maxLogEntries = 5
 
-	local topBar = UITheme.CreatePanel(screenGui, "HUDTopBar", UDim2.new(0, 290, 0, 122), UDim2.new(0, 18, 0, 18))
+	local topBarWidth = UITheme.Scale(viewportInfo.mobile and 240 or 290, viewportInfo)
+	local topBarHeight = UITheme.Scale(viewportInfo.mobile and 112 or 122, viewportInfo)
+	local topBar = UITheme.CreatePanel(screenGui, "HUDTopBar", UDim2.new(0, topBarWidth, 0, topBarHeight), UDim2.new(0, UITheme.Scale(18, viewportInfo), 0, UITheme.Scale(18, viewportInfo)))
 	local coinsLabel = UITheme.CreateSectionTitle(topBar, "Coins: -", UDim2.new(0, 14, 0, 12), UDim2.new(1, -28, 0, 22))
 	coinsLabel.TextSize = 18
 	local pointsLabel = UITheme.CreateBodyLabel(topBar, "Points: -", UDim2.new(0, 14, 0, 42), UDim2.new(1, -28, 0, 20))
@@ -49,7 +52,9 @@ function HUDController.Start(RemoteNames)
 	spectatorLabel.TextSize = 14
 	spectatorLabel.TextColor3 = palette.Warning
 
-	local centerCard = UITheme.CreatePanel(screenGui, "HUDCenterCard", UDim2.new(0, 430, 0, 164), UDim2.new(0.5, -215, 0, 18))
+	local centerSize, centerPos = UITheme.GetCenteredPanelRect(viewportInfo, viewportInfo.mobile and 360 or 430, viewportInfo.mobile and 148 or 164)
+	centerPos = UDim2.new(centerPos.X.Scale, centerPos.X.Offset, 0, UITheme.Scale(18, viewportInfo))
+	local centerCard = UITheme.CreatePanel(screenGui, "HUDCenterCard", centerSize, centerPos)
 	local stateLabel = UITheme.CreateSectionTitle(centerCard, "Estado: -", UDim2.new(0, 16, 0, 12), UDim2.new(1, -32, 0, 24))
 	local timerLabel = UITheme.CreateSectionTitle(centerCard, "00", UDim2.new(0, 16, 0, 42), UDim2.new(0, 126, 0, 56))
 	timerLabel.TextSize = 40
@@ -64,20 +69,28 @@ function HUDController.Start(RemoteNames)
 	local modLabel = UITheme.CreateBodyLabel(centerCard, "Modifier: -", UDim2.new(0, 16, 0, 132), UDim2.new(1, -32, 0, 18))
 	modLabel.TextSize = 14
 
-	local logPanel = UITheme.CreatePanel(screenGui, "HUDLogPanel", UDim2.new(0, 360, 0, 176), UDim2.new(0, 18, 1, -194))
+	local logWidth = viewportInfo.mobile and 300 or 360
+	local logHeight = viewportInfo.mobile and 132 or 176
+	local logSize = UDim2.new(0, UITheme.Scale(logWidth, viewportInfo), 0, UITheme.Scale(logHeight, viewportInfo))
+	local logPos
+	logPos = UDim2.new(0, UITheme.Scale(18, viewportInfo), 1, -(logSize.Y.Offset + UITheme.Scale(18, viewportInfo)))
+	local logPanel = UITheme.CreatePanel(screenGui, "HUDLogPanel", logSize, logPos)
 	local logTitle = UITheme.CreateSectionTitle(logPanel, "Bitacora", UDim2.new(0, 14, 0, 10), UDim2.new(1, -28, 0, 22))
 	logTitle.TextSize = 18
 	local logList, logLayout = UITheme.CreateScrollFrame(logPanel, "LogList", UDim2.new(0, 12, 0, 38), UDim2.new(1, -24, 1, -50))
 	logList.BackgroundTransparency = 1
 	logList.ScrollBarThickness = 4
 
-	local masteryToast = UITheme.CreatePanel(screenGui, "MasteryToast", UDim2.new(0, 360, 0, 44), UDim2.new(0.5, -180, 0, 194))
+	local masterySize, masteryPos = UITheme.GetCenteredPanelRect(viewportInfo, viewportInfo.mobile and 320 or 360, 44)
+	masteryPos = UDim2.new(masteryPos.X.Scale, masteryPos.X.Offset, 0, UITheme.Scale(viewportInfo.mobile and 174 or 194, viewportInfo))
+	local masteryToast = UITheme.CreatePanel(screenGui, "MasteryToast", masterySize, masteryPos)
 	masteryToast.Visible = false
 	local masteryLabel = UITheme.CreateBodyLabel(masteryToast, "", UDim2.new(0, 14, 0, 10), UDim2.new(1, -28, 0, 24))
 	masteryLabel.TextSize = 15
 	masteryLabel.TextColor3 = palette.Warning
 
-	local resultFrame = UITheme.CreatePanel(screenGui, "ResultPanel", UDim2.new(0, 650, 0, 390), UDim2.new(0.5, -325, 0.5, -195))
+	local resultSize, resultPos = UITheme.GetCenteredPanelRect(viewportInfo, viewportInfo.mobile and 360 or 650, viewportInfo.mobile and 420 or 390)
+	local resultFrame = UITheme.CreatePanel(screenGui, "ResultPanel", resultSize, resultPos)
 	resultFrame.Visible = false
 	local resultTitle = UITheme.CreateSectionTitle(resultFrame, "Resumen", UDim2.new(0, 16, 0, 12), UDim2.new(1, -32, 0, 28))
 	resultTitle.TextSize = 22
@@ -98,11 +111,12 @@ function HUDController.Start(RemoteNames)
 
 	local function pulseFrame(frame, tint)
 		local original = frame.BackgroundColor3
+		local originalSize = frame.Size
 		local grow = TweenService:Create(frame, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Size = UDim2.new(frame.Size.X.Scale, frame.Size.X.Offset + 8, frame.Size.Y.Scale, frame.Size.Y.Offset + 6),
+			Size = UDim2.new(originalSize.X.Scale, originalSize.X.Offset + 8, originalSize.Y.Scale, originalSize.Y.Offset + 6),
 		})
 		local shrink = TweenService:Create(frame, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-			Size = UDim2.new(frame.Size.X.Scale, frame.Size.X.Offset, frame.Size.Y.Scale, frame.Size.Y.Offset),
+			Size = originalSize,
 		})
 		if tint then
 			frame.BackgroundColor3 = tint
@@ -324,6 +338,7 @@ function HUDController.Start(RemoteNames)
 		local unlockedTitle = unlockedNow[1] and unlockedNow[1].title or ""
 
 		resultTitle.Text = wasWinner and "Victoria" or ("Ganador: " .. tostring(payload.winnerName or "-"))
+		resultTitle.TextColor3 = wasWinner and palette.Success or palette.Text
 		resultLabel.Text = table.concat({
 			("Mapa: %s"):format(tostring(telemetry.mapName or stateData.mapName or "-")),
 			("Modifier: %s"):format(tostring(payload.progression and payload.progression.modifier or stateData.matchModifierLabel or "-")),
@@ -362,12 +377,12 @@ function HUDController.Start(RemoteNames)
 				safeNum(telemetry.eliminations),
 				tonumber(telemetry.durationSeconds) or 0
 			),
-			("Sesion  min:%d  partidas:%d  abandons:%d"):format(
+			viewportInfo.mobile and "" or ("Sesion  min:%d  partidas:%d  abandons:%d"):format(
 				safeNum(liveOps.sessionMinutes),
 				safeNum(liveOps.matchesPlayed),
 				safeNum(liveOps.abandons)
 			),
-			("Media reciente  %.1fs  rondas:%.1f  abandons:%.1f"):format(
+			viewportInfo.mobile and "" or ("Media reciente  %.1fs  rondas:%.1f  abandons:%.1f"):format(
 				tonumber(liveOps.averageDurationSeconds) or 0,
 				tonumber(liveOps.averageRounds) or 0,
 				tonumber(liveOps.averageAbandons) or 0

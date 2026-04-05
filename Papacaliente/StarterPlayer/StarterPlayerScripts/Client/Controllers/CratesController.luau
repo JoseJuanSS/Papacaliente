@@ -19,8 +19,10 @@ function CratesController.Start(RemoteNames)
 	local RE_CrateDataUpdate = remotes:WaitForChild(RemoteNames.CrateDataUpdate)
 
 	local screenGui = UITheme.GetScreenGui(player)
-	local toggle = UITheme.CreateIconToggle(screenGui, "CratesToggle", "CAJAS", UDim2.new(1, -202, 0, 68))
-	local panel = UITheme.CreatePanel(screenGui, "CratesPanel", UDim2.new(0, 560, 0, 470), UDim2.new(1, -578, 0, 114))
+	local viewportInfo = UITheme.GetViewportInfo()
+	local toggle = UITheme.CreateIconToggle(screenGui, "CratesToggle", "CAJAS", UITheme.GetRightTogglePosition(viewportInfo, 1))
+	local panelSize, panelPos = UITheme.GetRightPanelRect(viewportInfo, viewportInfo.mobile and 350 or 560, viewportInfo.mobile and 500 or 470, viewportInfo.mobile and 64 or 114)
+	local panel = UITheme.CreatePanel(screenGui, "CratesPanel", panelSize, panelPos)
 	panel.Visible = false
 
 	local title = UITheme.CreateSectionTitle(panel, "Cajas", UDim2.new(0, 16, 0, 14), UDim2.new(1, -120, 0, 26))
@@ -38,7 +40,7 @@ function CratesController.Start(RemoteNames)
 		UITheme.ClearFrames(list)
 
 		for _, crate in pairs(data or {}) do
-			local row = UITheme.CreateCard(list, UDim2.new(1, -4, 0, 142))
+			local row = UITheme.CreateCard(list, UDim2.new(1, -4, 0, viewportInfo.mobile and 184 or 142))
 			local crateTitle = UITheme.CreateSectionTitle(row, safeStr(crate.title), UDim2.new(0, 12, 0, 10), UDim2.new(1, -156, 0, 20))
 			crateTitle.TextSize = 16
 			local price = UITheme.CreateBodyLabel(row, ("%d coins"):format(tonumber(crate.priceCoins) or 0), UDim2.new(0, 12, 0, 34), UDim2.new(1, -156, 0, 18))
@@ -54,7 +56,7 @@ function CratesController.Start(RemoteNames)
 				end
 				table.insert(lines, rarity .. ": " .. table.concat(names, ", "))
 			end
-			local contents = UITheme.CreateBodyLabel(row, table.concat(lines, "\n"), UDim2.new(0, 12, 0, 78), UDim2.new(1, -156, 0, 52))
+			local contents = UITheme.CreateBodyLabel(row, table.concat(lines, "\n"), UDim2.new(0, 12, 0, 78), UDim2.new(1, viewportInfo.mobile and -24 or -156, 0, viewportInfo.mobile and 76 or 52))
 			contents.TextYAlignment = Enum.TextYAlignment.Top
 			contents.TextSize = 13
 
