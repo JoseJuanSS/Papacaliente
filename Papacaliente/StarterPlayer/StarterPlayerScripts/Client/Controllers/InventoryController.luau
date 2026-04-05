@@ -1,118 +1,78 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local UITheme = require(script.Parent:WaitForChild("UITheme"))
+
 local InventoryController = {}
 
 function InventoryController.Start(RemoteNames)
-
 	local player = Players.LocalPlayer
-
 	local remotes = ReplicatedStorage:WaitForChild(RemoteNames.RemotesFolder)
-
 	local RE_Request = remotes:WaitForChild(RemoteNames.InventoryRequest)
 	local RE_Update = remotes:WaitForChild(RemoteNames.InventoryUpdate)
 	local RE_Equip = remotes:WaitForChild(RemoteNames.InventoryEquip)
 
-
-	local screenGui = player.PlayerGui:FindFirstChild("HotPotatoUI")
-
-	local toggle = Instance.new("TextButton")
-	toggle.Size = UDim2.new(0,180,0,40)
-	toggle.Position = UDim2.new(1,-200,0,120)
-	toggle.Text = "?? Inventario"
-	toggle.Parent = screenGui
-
-
-	local panel = Instance.new("Frame")
-	panel.Size = UDim2.new(0,500,0,450)
-	panel.Position = UDim2.new(1,-520,0,170)
+	local screenGui = UITheme.GetScreenGui(player)
+	local toggle = UITheme.CreateIconToggle(screenGui, "InventoryToggle", "INVENTARIO", UDim2.new(1, -202, 0, 118))
+	local panel = UITheme.CreatePanel(screenGui, "InventoryPanel", UDim2.new(0, 460, 0, 430), UDim2.new(1, -478, 0, 164))
 	panel.Visible = false
-	panel.Parent = screenGui
 
+	local title = UITheme.CreateSectionTitle(panel, "Inventario", UDim2.new(0, 16, 0, 14), UDim2.new(1, -120, 0, 26))
+	local subtitle = UITheme.CreateBodyLabel(panel, "Equipa los cosmeticos que ya desbloqueaste.", UDim2.new(0, 16, 0, 42), UDim2.new(1, -120, 0, 18))
+	subtitle.TextSize = 14
+	local close = UITheme.CreateButton(panel, "CloseInventory", "Cerrar", UDim2.new(0, 92, 0, 34), UDim2.new(1, -108, 0, 14), false)
+	local list, layout = UITheme.CreateScrollFrame(panel, "InventoryList", UDim2.new(0, 14, 0, 80), UDim2.new(1, -28, 1, -94))
 
-	local list = Instance.new("ScrollingFrame")
-	list.Size = UDim2.new(1,-20,1,-20)
-	list.Position = UDim2.new(0,10,0,10)
-	list.Parent = panel
+	local function render(data)
+		UITheme.ClearFrames(list)
 
+		for itemType, items in pairs(data.Inventory or {}) do
+			for itemId, owned in pairs(items) do
+				if owned == true then
+					local row = UITheme.CreateCard(list, UDim2.new(1, -4, 0, 64))
+					local titleLabel = UITheme.CreateSectionTitle(row, itemId, UDim2.new(0, 12, 0, 10), UDim2.new(0.62, -8, 0, 18))
+					titleLabel.TextSize = 15
+					local meta = UITheme.CreateBodyLabel(row, itemType, UDim2.new(0, 12, 0, 34), UDim2.new(0.62, -8, 0, 18))
+					meta.TextSize = 14
 
-	local layout = Instance.new("UIListLayout")
-	layout.Parent = list
+					local equipped = data.Equipped and data.Equipped[itemType] == itemId
+					local button = UITheme.CreateButton(
+						row,
+						"EquipButton",
+						equipped and "Equipado" or "Equipar",
+						UDim2.new(0, 122, 0, 36),
+						UDim2.new(1, -134, 0.5, -18),
+						not equipped
+					)
+					if not equipped then
+						button.MouseButton1Click:Connect(function()
+							RE_Equip:FireServer(itemType, itemId)
+						end)
+					else
+						button.AutoButtonColor = false
+						button.Active = false
+					end
+				end
+			end
+		end
 
+		UITheme.RefreshCanvas(list, layout, 10)
+	end
 
 	toggle.MouseButton1Click:Connect(function()
-
 		panel.Visible = not panel.Visible
-
 		if panel.Visible then
 			RE_Request:FireServer()
 		end
-
 	end)
-
-
-	local function clear()
-
-		for _,v in ipairs(list:GetChildren()) do
-			if v:IsA("Frame") then
-				v:Destroy()
-			end
-		end
-
-	end
-
-
-	local function createItem(itemType,itemId,equipped)
-
-		local frame = Instance.new("Frame")
-		frame.Size = UDim2.new(1,-10,0,60)
-		frame.Parent = list
-
-		local name = Instance.new("TextLabel")
-		name.Size = UDim2.new(0.6,0,1,0)
-		name.Text = itemId
-		name.Parent = frame
-
-		local button = Instance.new("TextButton")
-		button.Size = UDim2.new(0.3,0,1,0)
-		button.Position = UDim2.new(0.65,0,0,0)
-		button.Text = equipped and "Equipped" or "Equip"
-		button.Parent = frame
-
-
-		if not equipped then
-
-			button.MouseButton1Click:Connect(function()
-
-				RE_Equip:FireServer(itemType,itemId)
-
-			end)
-
-		end
-
-	end
-
+	close.MouseButton1Click:Connect(function()
+		panel.Visible = false
+	end)
 
 	RE_Update.OnClientEvent:Connect(function(data)
-
-		clear()
-
-		for itemType,items in pairs(data.Inventory) do
-
-			for itemId,_ in pairs(items) do
-
-				local equipped = data.Equipped[itemType] == itemId
-
-				createItem(itemType,itemId,equipped)
-
-			end
-
-		end
-
+		if typeof(data) ~= "table" then return end
+		render(data)
 	end)
-
-
 end
-
 
 return InventoryController

@@ -1,201 +1,170 @@
--- StarterPlayerScripts/Client/Controllers/SpectatorController.lua
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
+local UITheme = require(script.Parent:WaitForChild("UITheme"))
+
 local SpectatorController = {}
 
 function SpectatorController.Start(RemoteNames)
 	local player = Players.LocalPlayer
-	local cam = workspace.CurrentCamera
+	local camera = workspace.CurrentCamera
+	local remotes = ReplicatedStorage:WaitForChild(RemoteNames.RemotesFolder)
+	local RE_SpectatorAction = remotes:WaitForChild(RemoteNames.SpectatorAction)
 
-	local Remotes = ReplicatedStorage:WaitForChild(RemoteNames.RemotesFolder)
-	local RE_SpectatorAction = Remotes:WaitForChild(RemoteNames.SpectatorAction)
+	local screenGui = UITheme.GetScreenGui(player)
+	local panel = UITheme.CreatePanel(screenGui, "SpectatorPanel", UDim2.new(0, 320, 0, 118), UDim2.new(0.5, -160, 1, -136))
+	panel.Visible = false
+	local title = UITheme.CreateSectionTitle(panel, "Espectador", UDim2.new(0, 14, 0, 12), UDim2.new(1, -28, 0, 22))
+	title.TextSize = 18
+	local targetLabel = UITheme.CreateBodyLabel(panel, "Viendo: -", UDim2.new(0, 14, 0, 40), UDim2.new(1, -28, 0, 18))
+	targetLabel.TextSize = 15
+	local hintLabel = UITheme.CreateBodyLabel(panel, "Izq/Der para cambiar. V para volver.", UDim2.new(0, 14, 0, 62), UDim2.new(1, -28, 0, 18))
+	hintLabel.TextSize = 13
+	local prevButton = UITheme.CreateButton(panel, "PrevTarget", "<", UDim2.new(0, 64, 0, 34), UDim2.new(0, 14, 1, -46), false)
+	local lobbyButton = UITheme.CreateButton(panel, "LobbyFreeRoam", "Lobby", UDim2.new(0, 102, 0, 34), UDim2.new(0.5, -51, 1, -46), true)
+	local nextButton = UITheme.CreateButton(panel, "NextTarget", ">", UDim2.new(0, 64, 0, 34), UDim2.new(1, -78, 1, -46), false)
 
-	local SWITCH_EVERY = 4
-	local MANUAL_PAUSE = SWITCH_EVERY
-	local INPUT_DEBOUNCE = 0.2
+	local switchEvery = 4
+	local manualPause = 4
+	local inputDebounce = 0.2
 
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "SpectatorUI"
-	gui.ResetOnSpawn = false
-	gui.Parent = player:WaitForChild("PlayerGui")
-
-	local frame = Instance.new("Frame")
-	frame.Size = UDim2.new(0, 300, 0, 120)
-	frame.Position = UDim2.new(0.5, -150, 1, -140)
-	frame.BackgroundTransparency = 0.25
-	frame.Visible = false
-	frame.Parent = gui
-
-	local title = Instance.new("TextLabel")
-	title.Size = UDim2.new(1, 0, 0, 34)
-	title.BackgroundTransparency = 1
-	title.TextScaled = true
-	title.Text = "Spectator"
-	title.Parent = frame
-
-	local targetLabel = Instance.new("TextLabel")
-	targetLabel.Size = UDim2.new(1, 0, 0, 26)
-	targetLabel.Position = UDim2.new(0, 0, 0, 36)
-	targetLabel.BackgroundTransparency = 1
-	targetLabel.TextScaled = true
-	targetLabel.Text = "Viendo: -"
-	targetLabel.Parent = frame
-
-	local prevBtn = Instance.new("TextButton")
-	prevBtn.Size = UDim2.new(0.3, 0, 0, 40)
-	prevBtn.Position = UDim2.new(0.05, 0, 1, -44)
-	prevBtn.Text = "?"
-	prevBtn.Parent = frame
-
-	local nextBtn = Instance.new("TextButton")
-	nextBtn.Size = UDim2.new(0.3, 0, 0, 40)
-	nextBtn.Position = UDim2.new(0.65, 0, 1, -44)
-	nextBtn.Text = "?"
-	nextBtn.Parent = frame
-
-	local lobbyBtn = Instance.new("TextButton")
-	lobbyBtn.Size = UDim2.new(0.25, 0, 0, 40)
-	lobbyBtn.Position = UDim2.new(0.375, 0, 1, -44)
-	lobbyBtn.Text = "LOBBY"
-	lobbyBtn.Parent = frame
-
-	-- =========================
-	-- ? NUEVO: FreeRoam local
-	-- =========================
 	local freeRoamLobby = false
+	local alive = {}
+	local index = 1
+	local lastInput = 0
+	local pauseUntil = 0
+	local autoTimer = 0
 
 	local function setCameraToSelf()
-		local ch = player.Character
-		local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-		cam.CameraType = Enum.CameraType.Custom
-		if hum then
-			cam.CameraSubject = hum
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		camera.CameraType = Enum.CameraType.Custom
+		if humanoid then
+			camera.CameraSubject = humanoid
 		end
 	end
 
-	local alive = {}
-	local idx = 1
-	local lastInput = 0
-	local pauseUntil = 0
-	local autoT = 0
-
 	local function rebuildAlive()
 		alive = {}
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p ~= player and not p:GetAttribute("Eliminated") then
-				table.insert(alive, p)
+		for _, target in ipairs(Players:GetPlayers()) do
+			if target ~= player and not target:GetAttribute("Eliminated") then
+				table.insert(alive, target)
 			end
 		end
-		if idx > #alive then idx = 1 end
+		if index > #alive then
+			index = 1
+		end
 	end
 
 	local function followTarget()
 		if freeRoamLobby then
-			targetLabel.Text = "Viendo: (Lobby)"
+			targetLabel.Text = "Viendo: Lobby"
 			setCameraToSelf()
 			return
 		end
 
 		if #alive == 0 then
 			targetLabel.Text = "Viendo: -"
-			cam.CameraType = Enum.CameraType.Custom
+			camera.CameraType = Enum.CameraType.Custom
 			return
 		end
 
-		local target = alive[idx]
+		local target = alive[index]
 		targetLabel.Text = "Viendo: " .. target.Name
 
-		local ch = target.Character
-		local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-		if hum then
-			cam.CameraType = Enum.CameraType.Custom
-			cam.CameraSubject = hum
+		local character = target.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			camera.CameraType = Enum.CameraType.Custom
+			camera.CameraSubject = humanoid
 		end
 	end
 
-	local function manualStep(dir)
+	local function manualStep(direction)
 		if freeRoamLobby then return end
 
 		local now = os.clock()
-		if now - lastInput < INPUT_DEBOUNCE then return end
+		if now - lastInput < inputDebounce then return end
 		lastInput = now
 
 		rebuildAlive()
 		if #alive == 0 then return end
 
-		idx += dir
-		if idx < 1 then idx = #alive end
-		if idx > #alive then idx = 1 end
+		index += direction
+		if index < 1 then
+			index = #alive
+		elseif index > #alive then
+			index = 1
+		end
 
-		pauseUntil = os.clock() + MANUAL_PAUSE
+		pauseUntil = os.clock() + manualPause
 		followTarget()
 	end
 
-	prevBtn.MouseButton1Click:Connect(function() manualStep(-1) end)
-	nextBtn.MouseButton1Click:Connect(function() manualStep(1) end)
-
-	-- ? LOBBY: cambia a free roam (cliente) + avisa al server
-	lobbyBtn.MouseButton1Click:Connect(function()
+	prevButton.MouseButton1Click:Connect(function()
+		manualStep(-1)
+	end)
+	nextButton.MouseButton1Click:Connect(function()
+		manualStep(1)
+	end)
+	lobbyButton.MouseButton1Click:Connect(function()
 		freeRoamLobby = true
-		frame.Visible = false
+		panel.Visible = false
 		setCameraToSelf()
 		RE_SpectatorAction:FireServer("FreeRoamLobby")
 	end)
 
-	-- ? Extra: presiona "S" para volver al modo spectate
-	UserInputService.InputBegan:Connect(function(input, gp)
-		if gp then return end
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then return end
 
 		if input.KeyCode == Enum.KeyCode.Left then
-			if frame.Visible then manualStep(-1) end
+			if panel.Visible then
+				manualStep(-1)
+			end
 		elseif input.KeyCode == Enum.KeyCode.Right then
-			if frame.Visible then manualStep(1) end
+			if panel.Visible then
+				manualStep(1)
+			end
 		elseif input.KeyCode == Enum.KeyCode.V then
-			-- volver a spectate si est? eliminado
 			if player:GetAttribute("Eliminated") == true then
 				freeRoamLobby = false
-				frame.Visible = true
+				panel.Visible = true
 				rebuildAlive()
 				followTarget()
 			end
 		end
 	end)
 
-	local function onAttr()
-		local elim = player:GetAttribute("Eliminated") == true
-
-		if elim then
-			-- Cuando te eliminan, siempre arrancas en spectate (no en free roam)
+	local function onEliminatedChanged()
+		local eliminated = player:GetAttribute("Eliminated") == true
+		if eliminated then
 			freeRoamLobby = false
-			frame.Visible = true
+			panel.Visible = true
 			rebuildAlive()
 			followTarget()
 		else
-			-- Ya no est?s eliminado: UI fuera y c?mara normal
 			freeRoamLobby = false
-			frame.Visible = false
+			panel.Visible = false
 			setCameraToSelf()
 		end
 	end
 
-	player:GetAttributeChangedSignal("Eliminated"):Connect(onAttr)
-	onAttr()
+	player:GetAttributeChangedSignal("Eliminated"):Connect(onEliminatedChanged)
+	onEliminatedChanged()
 
-	RunService.RenderStepped:Connect(function(dt)
+	RunService.RenderStepped:Connect(function(deltaTime)
 		if freeRoamLobby then
-			-- Asegura c?mara al self constantemente
 			setCameraToSelf()
 			return
 		end
 
-		if not frame.Visible then return end
-		autoT += dt
-		if autoT < SWITCH_EVERY then return end
-		autoT = 0
+		if not panel.Visible then return end
 
+		autoTimer += deltaTime
+		if autoTimer < switchEvery then return end
+		autoTimer = 0
 		if os.clock() < pauseUntil then return end
 
 		rebuildAlive()
@@ -204,8 +173,10 @@ function SpectatorController.Start(RemoteNames)
 			return
 		end
 
-		idx += 1
-		if idx > #alive then idx = 1 end
+		index += 1
+		if index > #alive then
+			index = 1
+		end
 		followTarget()
 	end)
 end

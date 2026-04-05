@@ -1,197 +1,73 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local UITheme = require(script.Parent:WaitForChild("UITheme"))
+
 local CratesController = {}
 
-local function safeStr(v)
-	if v == nil then return "" end
-	return tostring(v)
+local function safeStr(value)
+	if value == nil then return "" end
+	return tostring(value)
 end
 
 function CratesController.Start(RemoteNames)
 	local player = Players.LocalPlayer
-
 	local remotes = ReplicatedStorage:WaitForChild(RemoteNames.RemotesFolder)
 	local RE_CrateOpenRequest = remotes:WaitForChild(RemoteNames.CrateOpenRequest)
 	local RE_CrateOpenResult = remotes:WaitForChild(RemoteNames.CrateOpenResult)
 	local RE_CrateDataRequest = remotes:WaitForChild(RemoteNames.CrateDataRequest)
 	local RE_CrateDataUpdate = remotes:WaitForChild(RemoteNames.CrateDataUpdate)
 
-	local screenGui = player:WaitForChild("PlayerGui"):FindFirstChild("HotPotatoUI")
-	if not screenGui then
-		screenGui = Instance.new("ScreenGui")
-		screenGui.Name = "HotPotatoUI"
-		screenGui.ResetOnSpawn = false
-		screenGui.Parent = player:WaitForChild("PlayerGui")
-	end
-
-	local toggle = Instance.new("TextButton")
-	toggle.Name = "CratesToggle"
-	toggle.Size = UDim2.new(0, 180, 0, 40)
-	toggle.Position = UDim2.new(1, -200, 0, 70)
-	toggle.TextScaled = true
-	toggle.Text = "?? Cajas"
-	toggle.Parent = screenGui
-
-	local panel = Instance.new("Frame")
-	panel.Name = "CratesPanel"
-	panel.Size = UDim2.new(0, 540, 0, 460)
-	panel.Position = UDim2.new(1, -560, 0, 120)
-	panel.BackgroundTransparency = 0.15
+	local screenGui = UITheme.GetScreenGui(player)
+	local toggle = UITheme.CreateIconToggle(screenGui, "CratesToggle", "CAJAS", UDim2.new(1, -202, 0, 68))
+	local panel = UITheme.CreatePanel(screenGui, "CratesPanel", UDim2.new(0, 560, 0, 470), UDim2.new(1, -578, 0, 114))
 	panel.Visible = false
-	panel.Parent = screenGui
 
-	local title = Instance.new("TextLabel")
-	title.Size = UDim2.new(1, -20, 0, 40)
-	title.Position = UDim2.new(0, 10, 0, 10)
-	title.BackgroundTransparency = 1
-	title.TextScaled = true
-	title.Text = "Cajas y Ruleta"
-	title.Parent = panel
+	local title = UITheme.CreateSectionTitle(panel, "Cajas", UDim2.new(0, 16, 0, 14), UDim2.new(1, -120, 0, 26))
+	local subtitle = UITheme.CreateBodyLabel(panel, "Abre cajas cosmeticas y revisa sus odds.", UDim2.new(0, 16, 0, 42), UDim2.new(1, -120, 0, 18))
+	subtitle.TextSize = 14
+	local close = UITheme.CreateButton(panel, "CloseCrates", "Cerrar", UDim2.new(0, 92, 0, 34), UDim2.new(1, -108, 0, 14), false)
+	local list, layout = UITheme.CreateScrollFrame(panel, "CratesList", UDim2.new(0, 14, 0, 80), UDim2.new(1, -28, 1, -146))
+	local resultBox = UITheme.CreatePanel(panel, "CrateResult", UDim2.new(1, -28, 0, 54), UDim2.new(0, 14, 1, -68))
+	local resultLabel = UITheme.CreateBodyLabel(resultBox, "Abre una caja para ver tu premio.", UDim2.new(0, 14, 0, 10), UDim2.new(1, -28, 0, 30))
+	resultLabel.TextSize = 14
 
-	local close = Instance.new("TextButton")
-	close.Size = UDim2.new(0, 40, 0, 40)
-	close.Position = UDim2.new(1, -50, 0, 10)
-	close.TextScaled = true
-	close.Text = "X"
-	close.Parent = panel
-
-	local listFrame = Instance.new("ScrollingFrame")
-	listFrame.Size = UDim2.new(1, -20, 1, -130)
-	listFrame.Position = UDim2.new(0, 10, 0, 60)
-	listFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-	listFrame.ScrollBarThickness = 8
-	listFrame.Parent = panel
-
-	local layout = Instance.new("UIListLayout")
-	layout.Padding = UDim.new(0, 8)
-	layout.Parent = listFrame
-
-	local resultLabel = Instance.new("TextLabel")
-	resultLabel.Size = UDim2.new(1, -20, 0, 60)
-	resultLabel.Position = UDim2.new(0, 10, 1, -65)
-	resultLabel.BackgroundTransparency = 0.15
-	resultLabel.TextScaled = true
-	resultLabel.Text = "Abre una caja para ver tu premio."
-	resultLabel.Parent = panel
-
-	local cratesCache = nil
 	local isRolling = false
 
-	local function clearList()
-		for _, ch in ipairs(listFrame:GetChildren()) do
-			if ch:IsA("Frame") then
-				ch:Destroy()
+	local function render(data)
+		UITheme.ClearFrames(list)
+
+		for _, crate in pairs(data or {}) do
+			local row = UITheme.CreateCard(list, UDim2.new(1, -4, 0, 142))
+			local crateTitle = UITheme.CreateSectionTitle(row, safeStr(crate.title), UDim2.new(0, 12, 0, 10), UDim2.new(1, -156, 0, 20))
+			crateTitle.TextSize = 16
+			local price = UITheme.CreateBodyLabel(row, ("%d coins"):format(tonumber(crate.priceCoins) or 0), UDim2.new(0, 12, 0, 34), UDim2.new(1, -156, 0, 18))
+			price.TextSize = 14
+			local odds = UITheme.CreateBodyLabel(row, "Common 60% | Rare 30% | Epic 9% | Legendary 1%", UDim2.new(0, 12, 0, 54), UDim2.new(1, -156, 0, 18))
+			odds.TextSize = 13
+
+			local lines = {}
+			for rarity, items in pairs(crate.items or {}) do
+				local names = {}
+				for _, item in ipairs(items) do
+					table.insert(names, safeStr(item.displayName))
+				end
+				table.insert(lines, rarity .. ": " .. table.concat(names, ", "))
 			end
-		end
-	end
+			local contents = UITheme.CreateBodyLabel(row, table.concat(lines, "\n"), UDim2.new(0, 12, 0, 78), UDim2.new(1, -156, 0, 52))
+			contents.TextYAlignment = Enum.TextYAlignment.Top
+			contents.TextSize = 13
 
-	local function resizeCanvas()
-		task.wait()
-		listFrame.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 12)
-	end
-
-	local function buildFlatItemPool(crate)
-		local pool = {}
-		for rarity, items in pairs(crate.items) do
-			for _, item in ipairs(items) do
-				table.insert(pool, {
-					rarity = rarity,
-					item = item,
-				})
-			end
-		end
-		return pool
-	end
-
-	local function playFakeRoll(crate)
-		local pool = buildFlatItemPool(crate)
-		if #pool == 0 then return end
-
-		isRolling = true
-		local duration = 1.8
-		local step = 0.08
-		local elapsed = 0
-
-		while elapsed < duration do
-			local entry = pool[math.random(1, #pool)]
-			resultLabel.Text = "Girando... [" .. safeStr(entry.rarity) .. "] " .. safeStr(entry.item.displayName)
-			task.wait(step)
-			elapsed += step
-		end
-	end
-
-	local function createCrateRow(crate)
-		local row = Instance.new("Frame")
-		row.Size = UDim2.new(1, -10, 0, 140)
-		row.BackgroundTransparency = 0.2
-		row.Parent = listFrame
-
-		local titleLabel = Instance.new("TextLabel")
-		titleLabel.Size = UDim2.new(1, -150, 0, 30)
-		titleLabel.Position = UDim2.new(0, 10, 0, 8)
-		titleLabel.BackgroundTransparency = 1
-		titleLabel.TextScaled = true
-		titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-		titleLabel.Text = safeStr(crate.title) .. " - " .. tostring(crate.priceCoins) .. " Coins"
-		titleLabel.Parent = row
-
-		local oddsLabel = Instance.new("TextLabel")
-		oddsLabel.Size = UDim2.new(1, -150, 0, 26)
-		oddsLabel.Position = UDim2.new(0, 10, 0, 40)
-		oddsLabel.BackgroundTransparency = 1
-		oddsLabel.TextScaled = true
-		oddsLabel.TextXAlignment = Enum.TextXAlignment.Left
-		oddsLabel.Text = "Common 60% | Rare 30% | Epic 9% | Legendary 1%"
-		oddsLabel.Parent = row
-
-		local itemsLabel = Instance.new("TextLabel")
-		itemsLabel.Size = UDim2.new(1, -150, 0, 60)
-		itemsLabel.Position = UDim2.new(0, 10, 0, 68)
-		itemsLabel.BackgroundTransparency = 1
-		itemsLabel.TextWrapped = true
-		itemsLabel.TextScaled = false
-		itemsLabel.TextXAlignment = Enum.TextXAlignment.Left
-		itemsLabel.TextYAlignment = Enum.TextYAlignment.Top
-
-		local lines = {}
-		for rarity, items in pairs(crate.items) do
-			local names = {}
-			for _, item in ipairs(items) do
-				table.insert(names, item.displayName)
-			end
-			table.insert(lines, rarity .. ": " .. table.concat(names, ", "))
-		end
-		itemsLabel.Text = table.concat(lines, "\n")
-		itemsLabel.Parent = row
-
-		local openBtn = Instance.new("TextButton")
-		openBtn.Size = UDim2.new(0, 120, 0, 90)
-		openBtn.Position = UDim2.new(1, -130, 0, 20)
-		openBtn.TextScaled = true
-		openBtn.Text = "Abrir"
-		openBtn.Parent = row
-
-		openBtn.MouseButton1Click:Connect(function()
-			if isRolling then return end
-
-			task.spawn(function()
-				playFakeRoll(crate)
+			local openButton = UITheme.CreateButton(row, "OpenCrate", "Abrir", UDim2.new(0, 124, 0, 40), UDim2.new(1, -136, 0.5, -20), true)
+			openButton.MouseButton1Click:Connect(function()
+				if isRolling then return end
+				isRolling = true
+				resultLabel.Text = "Abriendo caja..."
+				RE_CrateOpenRequest:FireServer(crate.id)
 			end)
-
-			RE_CrateOpenRequest:FireServer(crate.id)
-		end)
-	end
-
-	local function renderCrates(data)
-		cratesCache = data
-		clearList()
-
-		for _, crate in pairs(data) do
-			createCrateRow(crate)
 		end
 
-		resizeCanvas()
+		UITheme.RefreshCanvas(list, layout, 10)
 	end
 
 	toggle.MouseButton1Click:Connect(function()
@@ -200,22 +76,21 @@ function CratesController.Start(RemoteNames)
 			RE_CrateDataRequest:FireServer()
 		end
 	end)
-
 	close.MouseButton1Click:Connect(function()
 		panel.Visible = false
 	end)
 
 	RE_CrateDataUpdate.OnClientEvent:Connect(function(data)
-		renderCrates(data)
+		render(data)
 	end)
 
 	RE_CrateOpenResult.OnClientEvent:Connect(function(payload)
 		isRolling = false
+		if typeof(payload) ~= "table" then return end
 
-		if not payload then return end
 		if payload.ok ~= true then
 			if payload.reason == "NotEnoughCoins" then
-				resultLabel.Text = "No tienes Coins suficientes."
+				resultLabel.Text = "No tienes coins suficientes."
 			else
 				resultLabel.Text = "No se pudo abrir la caja."
 			end
@@ -224,9 +99,9 @@ function CratesController.Start(RemoteNames)
 
 		local item = payload.item
 		if payload.duplicate then
-			resultLabel.Text = "Duplicado: " .. safeStr(item.displayName) .. " | Refund +" .. tostring(payload.refundCoins) .. " Coins"
+			resultLabel.Text = ("Duplicado: %s | Refund +%d coins"):format(safeStr(item and item.displayName), tonumber(payload.refundCoins) or 0)
 		else
-			resultLabel.Text = "Ganaste [" .. safeStr(payload.rarity) .. "] " .. safeStr(item.displayName)
+			resultLabel.Text = ("Ganaste [%s] %s"):format(safeStr(payload.rarity), safeStr(item and item.displayName))
 		end
 	end)
 
