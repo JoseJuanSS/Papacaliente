@@ -14,7 +14,7 @@ function InventoryController.Start(RemoteNames)
 
 	local screenGui = UITheme.GetScreenGui(player)
 	local viewportInfo = UITheme.GetViewportInfo()
-	local toggle = UITheme.CreateIconToggle(screenGui, "InventoryToggle", "INVENTARIO", UITheme.GetRightTogglePosition(viewportInfo, 2))
+	local toggle = UITheme.CreateIconToggle(screenGui, "InventoryToggle", "INV.", UITheme.GetRightTogglePosition(viewportInfo, 2))
 	local panelSize, panelPos = UITheme.GetRightPanelRect(viewportInfo, viewportInfo.mobile and 340 or 460, viewportInfo.mobile and 420 or 430, viewportInfo.mobile and 110 or 164)
 	local panel = UITheme.CreatePanel(screenGui, "InventoryPanel", panelSize, panelPos)
 	panel.Visible = false

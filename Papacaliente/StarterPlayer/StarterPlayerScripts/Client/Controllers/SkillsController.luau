@@ -16,7 +16,7 @@ function SkillsController.Start(RemoteNames)
 
 	local screenGui = UITheme.GetScreenGui(player)
 	local viewportInfo = UITheme.GetViewportInfo()
-	local toggle = UITheme.CreateIconToggle(screenGui, "SkillsToggle", "SKILLS [Q]", UITheme.GetRightTogglePosition(viewportInfo, 6))
+	local toggle = UITheme.CreateIconToggle(screenGui, "SkillsToggle", "SKILL [Q]", UITheme.GetRightTogglePosition(viewportInfo, 6))
 	local panelSize, panelPos = UITheme.GetRightPanelRect(viewportInfo, viewportInfo.mobile and 340 or 430, viewportInfo.mobile and 360 or 390, viewportInfo.mobile and 140 or 194)
 	local panel = UITheme.CreatePanel(screenGui, "SkillsPanel", panelSize, panelPos)
 	panel.Visible = false

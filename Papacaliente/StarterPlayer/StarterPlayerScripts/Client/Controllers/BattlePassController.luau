@@ -14,7 +14,7 @@ function BattlePassController.Start(RemoteNames)
 
 	local screenGui = UITheme.GetScreenGui(player)
 	local viewportInfo = UITheme.GetViewportInfo()
-	local toggle = UITheme.CreateIconToggle(screenGui, "BattlePassToggle", "BATTLE PASS", UITheme.GetRightTogglePosition(viewportInfo, 5))
+	local toggle = UITheme.CreateIconToggle(screenGui, "BattlePassToggle", "PASE", UITheme.GetRightTogglePosition(viewportInfo, 5))
 	local panelSize, panelPos = UITheme.GetCenteredPanelRect(viewportInfo, viewportInfo.mobile and 360 or 640, viewportInfo.mobile and 500 or 460)
 	local panel = UITheme.CreatePanel(screenGui, "BattlePassPanel", panelSize, panelPos)
 	panel.Visible = false

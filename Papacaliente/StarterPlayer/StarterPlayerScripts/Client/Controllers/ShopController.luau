@@ -16,7 +16,7 @@ function ShopController.Start(RemoteNames)
 	local screenGui = UITheme.GetScreenGui(player)
 	local viewportInfo = UITheme.GetViewportInfo()
 
-	local toggle = UITheme.CreateIconToggle(screenGui, "ShopToggle", "TIENDA  [B]", UITheme.GetRightTogglePosition(viewportInfo, 4))
+	local toggle = UITheme.CreateIconToggle(screenGui, "ShopToggle", "TIENDA [B]", UITheme.GetRightTogglePosition(viewportInfo, 4))
 	local panelSize, panelPos = UITheme.GetCenteredPanelRect(viewportInfo, viewportInfo.mobile and 360 or 620, viewportInfo.mobile and 500 or 440)
 	local panel = UITheme.CreatePanel(screenGui, "ShopPanel", panelSize, panelPos)
 	panel.Visible = false
@@ -31,8 +31,11 @@ function ShopController.Start(RemoteNames)
 	coinsLabel.TextSize = 15
 	pointsLabel.TextSize = 15
 
-	local list, layout = UITheme.CreateScrollFrame(panel, "ShopList", UDim2.new(0, 14, 0, 104), UDim2.new(1, -28, 1, -118))
+	local coinsTab = UITheme.CreateButton(panel, "CoinsTab", "Coins", UDim2.new(0.5, -18, 0, 34), UDim2.new(0, 14, 0, 100), true)
+	local premiumTab = UITheme.CreateButton(panel, "PremiumTab", "Premium", UDim2.new(0.5, -18, 0, 34), UDim2.new(0.5, 4, 0, 100), false)
+	local list, layout = UITheme.CreateScrollFrame(panel, "ShopList", UDim2.new(0, 14, 0, 142), UDim2.new(1, -28, 1, -156))
 	local state = { catalog = {}, owned = {}, equipped = {}, coins = 0, totalPoints = 0, premiumCatalog = {}, premiumOwned = {} }
+	local currentTab = "coins"
 
 	UITheme.RegisterExclusivePanel("shop", panel, function()
 		RE_ShopRequest:FireServer("Get")
@@ -51,49 +54,55 @@ function ShopController.Start(RemoteNames)
 	local function render()
 		coinsLabel.Text = ("Coins: %d"):format(state.coins or 0)
 		pointsLabel.Text = ("TotalPoints: %d"):format(state.totalPoints or 0)
+		coinsTab.BackgroundColor3 = currentTab == "coins" and UITheme.Colors.Accent or UITheme.Colors.PanelStrong
+		coinsTab.TextColor3 = currentTab == "coins" and UITheme.Colors.Background or UITheme.Colors.Text
+		premiumTab.BackgroundColor3 = currentTab == "premium" and UITheme.Colors.Accent or UITheme.Colors.PanelStrong
+		premiumTab.TextColor3 = currentTab == "premium" and UITheme.Colors.Background or UITheme.Colors.Text
 		UITheme.ClearFrames(list)
 
-		for _, item in ipairs(state.catalog or {}) do
-			local row = UITheme.CreateCard(list, UDim2.new(1, -4, 0, viewportInfo.mobile and 92 or 74))
-			local name = UITheme.CreateSectionTitle(row, item.name or item.id, UDim2.new(0, 12, 0, 10), UDim2.new(0.62, -8, 0, 20))
-			name.TextSize = 16
-			local meta = UITheme.CreateBodyLabel(
-				row,
-				("%s | %s | %d coins"):format(tostring(item.slot or "?"), tostring(item.rarity or "?"), tonumber(item.price) or 0),
-				UDim2.new(0, 12, 0, 36),
-				UDim2.new(viewportInfo.mobile and 1 or 0.62, viewportInfo.mobile and -24 or -8, 0, viewportInfo.mobile and 34 or 18)
-			)
-			meta.TextSize = 14
+		if currentTab == "coins" then
+			for _, item in ipairs(state.catalog or {}) do
+				local row = UITheme.CreateCard(list, UDim2.new(1, -4, 0, viewportInfo.mobile and 92 or 74))
+				local name = UITheme.CreateSectionTitle(row, item.name or item.id, UDim2.new(0, 12, 0, 10), UDim2.new(0.62, -8, 0, 20))
+				name.TextSize = 16
+				local meta = UITheme.CreateBodyLabel(
+					row,
+					("%s | %s | %d coins"):format(tostring(item.slot or "?"), tostring(item.rarity or "?"), tonumber(item.price) or 0),
+					UDim2.new(0, 12, 0, 36),
+					UDim2.new(viewportInfo.mobile and 1 or 0.62, viewportInfo.mobile and -24 or -8, 0, viewportInfo.mobile and 34 or 18)
+				)
+				meta.TextSize = 14
 
-			local owned = state.owned and state.owned[item.id] == true
-			local equipped = isEquipped(item)
-			local buttonText = "Comprar"
-			local accent = true
+				local owned = state.owned and state.owned[item.id] == true
+				local equipped = isEquipped(item)
+				local buttonText = "Comprar"
+				local accent = true
 
-			if owned then
-				buttonText = equipped and "Equipado" or "Equipar"
-				accent = not equipped
+				if owned then
+					buttonText = equipped and "Equipado" or "Equipar"
+					accent = not equipped
+				end
+
+				local action = UITheme.CreateButton(row, "Action", buttonText, UDim2.new(0, viewportInfo.mobile and 110 or 132, 0, 38), UDim2.new(1, viewportInfo.mobile and -122 or -144, 0.5, -19), accent)
+				if not owned then
+					action.MouseButton1Click:Connect(function()
+						RE_ShopRequest:FireServer("Buy", item.id)
+					end)
+				elseif not equipped then
+					action.MouseButton1Click:Connect(function()
+						RE_ShopRequest:FireServer("Equip", item.id)
+					end)
+				else
+					action.AutoButtonColor = false
+					action.Active = false
+				end
 			end
-
-			local action = UITheme.CreateButton(row, "Action", buttonText, UDim2.new(0, viewportInfo.mobile and 110 or 132, 0, 38), UDim2.new(1, viewportInfo.mobile and -122 or -144, 0.5, -19), accent)
-			if not owned then
-				action.MouseButton1Click:Connect(function()
-					RE_ShopRequest:FireServer("Buy", item.id)
-				end)
-			elseif not equipped then
-				action.MouseButton1Click:Connect(function()
-					RE_ShopRequest:FireServer("Equip", item.id)
-				end)
-			else
-				action.AutoButtonColor = false
-				action.Active = false
-			end
-		end
-
-		if next(state.premiumCatalog or {}) then
+		elseif next(state.premiumCatalog or {}) then
 			local premiumHeader = UITheme.CreateCard(list, UDim2.new(1, -4, 0, 46))
-			local premiumTitle = UITheme.CreateSectionTitle(premiumHeader, "Gamepasses", UDim2.new(0, 12, 0, 10), UDim2.new(1, -24, 0, 22))
+			local premiumTitle = UITheme.CreateSectionTitle(premiumHeader, "Pases y Premium", UDim2.new(0, 12, 0, 10), UDim2.new(1, -24, 0, 22))
 			premiumTitle.TextSize = 16
+			local helper = UITheme.CreateBodyLabel(premiumHeader, "Compra acceso premium, pets y battle pass.", UDim2.new(0, 12, 0, 24), UDim2.new(1, -24, 0, 16))
+			helper.TextSize = 12
 
 			for _, premium in pairs(state.premiumCatalog or {}) do
 				local row = UITheme.CreateCard(list, UDim2.new(1, -4, 0, viewportInfo.mobile and 92 or 74))
@@ -116,6 +125,15 @@ function ShopController.Start(RemoteNames)
 
 		UITheme.RefreshCanvas(list, layout, 10)
 	end
+
+	coinsTab.MouseButton1Click:Connect(function()
+		currentTab = "coins"
+		render()
+	end)
+	premiumTab.MouseButton1Click:Connect(function()
+		currentTab = "premium"
+		render()
+	end)
 
 	toggle.MouseButton1Click:Connect(function()
 		UITheme.ToggleExclusivePanel("shop")

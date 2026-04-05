@@ -61,9 +61,9 @@ function UITheme.GetBottomCenterRect(viewportInfo, width, height, bottomOffset)
 end
 
 function UITheme.GetRightTogglePosition(viewportInfo, index)
-	local topBase = viewportInfo and viewportInfo.mobile and 88 or 32
-	local spacing = viewportInfo and viewportInfo.mobile and 48 or 54
-	local right = viewportInfo and viewportInfo.mobile and 150 or 202
+	local topBase = viewportInfo and viewportInfo.mobile and 88 or 44
+	local spacing = viewportInfo and viewportInfo.mobile and 44 or 48
+	local right = viewportInfo and viewportInfo.mobile and 136 or 176
 	return UDim2.new(1, -right, 0, topBase + ((index or 0) * spacing))
 end
 
@@ -173,7 +173,12 @@ function UITheme.CreateButton(parent, name, text, size, position, accent)
 end
 
 function UITheme.CreateIconToggle(parent, name, text, position)
-	return UITheme.CreateButton(parent, name, text, UDim2.new(0, 184, 0, 42), position, false)
+	local viewportInfo = UITheme.GetViewportInfo()
+	local width = viewportInfo.mobile and 122 or 156
+	local height = viewportInfo.mobile and 38 or 40
+	local button = UITheme.CreateButton(parent, name, text, UDim2.new(0, width, 0, height), position, false)
+	button.TextSize = viewportInfo.mobile and 13 or 14
+	return button
 end
 
 function UITheme.CreateScrollFrame(parent, name, position, size)
