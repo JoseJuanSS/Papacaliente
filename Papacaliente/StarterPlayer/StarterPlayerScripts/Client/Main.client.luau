@@ -47,6 +47,9 @@ local SpectatorController = safeRequire("SpectatorController")
 local MissionsController = safeRequire("MissionsController")
 local CratesController = safeRequire("CratesController")
 local InventoryController = safeRequire("InventoryController")
+local PetsController = safeRequire("PetsController")
+local BattlePassController = safeRequire("BattlePassController")
+local SkillsController = safeRequire("SkillsController")
 
 if HUDController and HUDController.Start then
 	print("[Main.client] Starting HUDController")
@@ -72,9 +75,21 @@ if InventoryController then
 	InventoryController.Start(RemoteNames)
 end
 
+if PetsController and PetsController.Start then
+	PetsController.Start(RemoteNames)
+end
+
 if CratesController and CratesController.Start then
 	print("[Main.client] Starting CratesController")
 	CratesController.Start(RemoteNames)
+end
+
+if BattlePassController and BattlePassController.Start then
+	BattlePassController.Start(RemoteNames)
+end
+
+if SkillsController and SkillsController.Start then
+	SkillsController.Start(RemoteNames)
 end
 
 print("[Main.client] DONE")

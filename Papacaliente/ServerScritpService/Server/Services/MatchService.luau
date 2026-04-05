@@ -86,6 +86,10 @@ function MatchService:Start()
 		return botService:GetParticipant()
 	end
 
+	local function isBotParticipant(participant)
+		return type(participant) == "table" and participant.IsBot == true
+	end
+
 	local function getParticipants()
 		local list = {}
 		for _, player in ipairs(getHumanPlayers()) do
@@ -99,7 +103,7 @@ function MatchService:Start()
 	end
 
 	local function getRealWinner(participant)
-		if participant and participant.IsBot then
+		if isBotParticipant(participant) then
 			return nil
 		end
 		return participant
@@ -112,7 +116,7 @@ function MatchService:Start()
 	local function isAlive(player)
 		if not player then return false end
 		if isEliminated(player) then return false end
-		if player.IsBot then
+		if isBotParticipant(player) then
 			return botService:IsAlive(player)
 		end
 		if player.Parent ~= Players then return false end
@@ -179,6 +183,16 @@ function MatchService:Start()
 		end,
 	})
 
+	_G.MatchRuntime = {
+		IsRunning = function()
+			return gameState == states.RUNNING
+		end,
+		IsAlive = isAlive,
+		GetPotatoController = function()
+			return potatoController
+		end,
+	}
+
 	botService:StartThinking({
 		IsRunning = function()
 			return gameState == states.RUNNING
@@ -229,7 +243,7 @@ function MatchService:Start()
 			local humanoid = getHumanoid(player)
 			if humanoid then
 				if not isEliminated(player) then
-					if player.IsBot then
+					if isBotParticipant(player) then
 						humanoid.WalkSpeed = MATCH_CFG.BotWalkSpeed or MATCH_CFG.BaseWalkSpeed or 18
 						pcall(function() humanoid.JumpPower = MATCH_CFG.BotJumpPower or MATCH_CFG.BaseJumpPower or 55 end)
 					else
@@ -270,7 +284,7 @@ function MatchService:Start()
 
 	local function moveCharacter(player, cf, applyNoPassWindow)
 		task.spawn(function()
-			if player.IsBot then
+			if isBotParticipant(player) then
 				botService:MoveTo(cf)
 				local humanoid = getHumanoid(player)
 				if humanoid then
@@ -350,7 +364,7 @@ function MatchService:Start()
 
 		eliminated[player.UserId] = true
 		rewardResolver:RecordElimination()
-		if not player.IsBot then
+		if not isBotParticipant(player) then
 			spectatorManager:SetSpectator(player, true)
 		end
 		potatoController:ClearPotatoFx(player)
@@ -415,6 +429,13 @@ function MatchService:Start()
 				missionService:Record(player, eventName, amount or 1)
 			end)
 		end
+
+		local battlePassService = _G.BattlePassService
+		if battlePassService and player and player.Parent == Players then
+			pcall(function()
+				battlePassService:Record(player, eventName, amount or 1)
+			end)
+		end
 	end
 
 	local function resetMatchState()
@@ -448,7 +469,7 @@ function MatchService:Start()
 
 	local function awardSurvivorsForRound()
 		for _, survivor in ipairs(getAlivePlayers()) do
-			if not survivor.IsBot then
+			if not isBotParticipant(survivor) then
 				rewardResolver:RecordRoundSurvived(survivor)
 				rewardResolver:AwardXP(survivor, getRewardAmount("SurviveRound", "XP"), "SurviveRound", Players)
 				rewardResolver:AwardCoins(survivor, getRewardAmount("SurviveRound", "Coins"), "SurviveRound", Players)
@@ -596,6 +617,19 @@ function MatchService:Start()
 					activeMapModel = mapManager:ActivateMap(activeMapModel)
 					task.wait(0.1)
 				end
+				if _G.AudienceVoteService then
+					local candidates = {}
+					for _, mapName in ipairs(mapManager:GetPlayableMapNames()) do
+						if mapName ~= activeMapName then
+							table.insert(candidates, mapName)
+						end
+						if #candidates >= 3 then
+							break
+						end
+					end
+					_G.AudienceVoteService:SetCandidates(candidates)
+					_G.AudienceVoteService:SendAll()
+				end
 
 				if not teleportAllToArena() then
 					setState(states.LOBBY)
@@ -720,6 +754,12 @@ function MatchService:Start()
 										playerName = player.Name,
 										unlocked = unlocked,
 									})
+								end
+							end
+							if _G.LeaderboardService then
+								for _, player in ipairs(Players:GetPlayers()) do
+									_G.LeaderboardService:PushPlayerStats(player)
+									_G.LeaderboardService:SendSnapshot(player)
 								end
 							end
 

@@ -29,4 +29,23 @@ RemoteNames.InventoryRequest = "InventoryRequest"
 RemoteNames.InventoryUpdate = "InventoryUpdate"
 RemoteNames.InventoryEquip = "InventoryEquip"
 
+RemoteNames.PremiumRequest = "PremiumRequest"
+RemoteNames.PremiumUpdate = "PremiumUpdate"
+
+RemoteNames.PetsRequest = "PetsRequest"
+RemoteNames.PetsUpdate = "PetsUpdate"
+RemoteNames.PetsEquip = "PetsEquip"
+
+RemoteNames.BattlePassRequest = "BattlePassRequest"
+RemoteNames.BattlePassUpdate = "BattlePassUpdate"
+RemoteNames.BattlePassClaim = "BattlePassClaim"
+
+RemoteNames.SkillsRequest = "SkillsRequest"
+RemoteNames.SkillsUpdate = "SkillsUpdate"
+RemoteNames.SkillsEquip = "SkillsEquip"
+RemoteNames.SkillsUse = "SkillsUse"
+
+RemoteNames.LeaderboardUpdate = "LeaderboardUpdate"
+RemoteNames.AudienceVoteUpdate = "AudienceVoteUpdate"
+
 return RemoteNames

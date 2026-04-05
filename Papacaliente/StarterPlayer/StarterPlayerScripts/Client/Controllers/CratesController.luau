@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
 
 local UITheme = require(script.Parent:WaitForChild("UITheme"))
 
@@ -29,12 +30,76 @@ function CratesController.Start(RemoteNames)
 	local subtitle = UITheme.CreateBodyLabel(panel, "Abre cajas cosmeticas y revisa sus odds.", UDim2.new(0, 16, 0, 42), UDim2.new(1, -120, 0, 18))
 	subtitle.TextSize = 14
 	local close = UITheme.CreateButton(panel, "CloseCrates", "Cerrar", UDim2.new(0, 92, 0, 34), UDim2.new(1, -108, 0, 14), false)
-	local list, layout = UITheme.CreateScrollFrame(panel, "CratesList", UDim2.new(0, 14, 0, 80), UDim2.new(1, -28, 1, -146))
-	local resultBox = UITheme.CreatePanel(panel, "CrateResult", UDim2.new(1, -28, 0, 54), UDim2.new(0, 14, 1, -68))
-	local resultLabel = UITheme.CreateBodyLabel(resultBox, "Abre una caja para ver tu premio.", UDim2.new(0, 14, 0, 10), UDim2.new(1, -28, 0, 30))
+	local list, layout = UITheme.CreateScrollFrame(panel, "CratesList", UDim2.new(0, 14, 0, 80), UDim2.new(1, -28, 1, -234))
+	local rouletteBox = UITheme.CreatePanel(panel, "CrateRoulette", UDim2.new(1, -28, 0, viewportInfo.mobile and 92 or 104), UDim2.new(0, 14, 1, -146))
+	local rouletteTitle = UITheme.CreateBodyLabel(rouletteBox, "Ruleta", UDim2.new(0, 12, 0, 8), UDim2.new(0, 120, 0, 18))
+	rouletteTitle.TextSize = 14
+	local rouletteStrip = Instance.new("ScrollingFrame")
+	rouletteStrip.Name = "RouletteStrip"
+	rouletteStrip.Position = UDim2.new(0, 12, 0, 30)
+	rouletteStrip.Size = UDim2.new(1, -24, 0, viewportInfo.mobile and 50 or 58)
+	rouletteStrip.BackgroundColor3 = UITheme.Colors.PanelSoft
+	rouletteStrip.BackgroundTransparency = 0.08
+	rouletteStrip.BorderSizePixel = 0
+	rouletteStrip.ScrollBarThickness = 0
+	rouletteStrip.CanvasSize = UDim2.new(0, 0, 0, 0)
+	rouletteStrip.Parent = rouletteBox
+	local stripCorner = Instance.new("UICorner")
+	stripCorner.CornerRadius = UDim.new(0, 10)
+	stripCorner.Parent = rouletteStrip
+	local stripLayout = Instance.new("UIListLayout")
+	stripLayout.FillDirection = Enum.FillDirection.Horizontal
+	stripLayout.Padding = UDim.new(0, 8)
+	stripLayout.Parent = rouletteStrip
+	local stripPadding = Instance.new("UIPadding")
+	stripPadding.PaddingLeft = UDim.new(0, 10)
+	stripPadding.PaddingRight = UDim.new(0, 10)
+	stripPadding.PaddingTop = UDim.new(0, 8)
+	stripPadding.PaddingBottom = UDim.new(0, 8)
+	stripPadding.Parent = rouletteStrip
+	local selector = Instance.new("Frame")
+	selector.Size = UDim2.new(0, 4, 1, -16)
+	selector.Position = UDim2.new(0.5, -2, 0, 8)
+	selector.BackgroundColor3 = UITheme.Colors.Accent
+	selector.BorderSizePixel = 0
+	selector.Parent = rouletteBox
+	local resultBox = UITheme.CreatePanel(panel, "CrateResult", UDim2.new(1, -28, 0, 62), UDim2.new(0, 14, 1, -68))
+	local resultLabel = UITheme.CreateBodyLabel(resultBox, "Abre una caja para ver tu premio.", UDim2.new(0, 14, 0, 10), UDim2.new(1, -28, 0, 38))
 	resultLabel.TextSize = 14
 
 	local isRolling = false
+
+	local function renderRoulette(sequence)
+		UITheme.ClearFrames(rouletteStrip)
+		for _, entry in ipairs(sequence or {}) do
+			local card = UITheme.CreateCard(rouletteStrip, UDim2.new(0, viewportInfo.mobile and 94 or 108, 1, -2))
+			card.BackgroundTransparency = 0.02
+			local rarityLabel = UITheme.CreateBodyLabel(card, safeStr(entry.rarity), UDim2.new(0, 10, 0, 8), UDim2.new(1, -20, 0, 16))
+			rarityLabel.TextSize = 12
+			local itemLabel = UITheme.CreateSectionTitle(card, safeStr(entry.displayName), UDim2.new(0, 10, 0, 24), UDim2.new(1, -20, 0, 28))
+			itemLabel.TextSize = 14
+			itemLabel.TextWrapped = true
+		end
+		task.defer(function()
+			rouletteStrip.CanvasSize = UDim2.new(0, stripLayout.AbsoluteContentSize.X + 20, 0, 0)
+			rouletteStrip.CanvasPosition = Vector2.new(0, 0)
+		end)
+	end
+
+	local function playRoulette(payload)
+		local sequence = payload.visualRoll or {}
+		renderRoulette(sequence)
+		task.wait()
+
+		local cardWidth = viewportInfo.mobile and 102 or 116
+		local winningIndex = math.min(#sequence, 16)
+		local targetX = math.max(0, ((winningIndex - 1) * cardWidth) - math.floor((rouletteStrip.AbsoluteSize.X - cardWidth) / 2))
+		local tween = TweenService:Create(rouletteStrip, TweenInfo.new(2.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			CanvasPosition = Vector2.new(targetX, 0),
+		})
+		tween:Play()
+		tween.Completed:Wait()
+	end
 
 	UITheme.RegisterExclusivePanel("crates", panel, function()
 		RE_CrateDataRequest:FireServer()
@@ -88,10 +153,10 @@ function CratesController.Start(RemoteNames)
 	end)
 
 	RE_CrateOpenResult.OnClientEvent:Connect(function(payload)
-		isRolling = false
 		if typeof(payload) ~= "table" then return end
 
 		if payload.ok ~= true then
+			isRolling = false
 			if payload.reason == "NotEnoughCoins" then
 				resultLabel.Text = "No tienes coins suficientes."
 			else
@@ -100,6 +165,8 @@ function CratesController.Start(RemoteNames)
 			return
 		end
 
+		playRoulette(payload)
+		isRolling = false
 		local item = payload.item
 		if payload.duplicate then
 			resultLabel.Text = ("Duplicado: %s | Refund +%d coins"):format(safeStr(item and item.displayName), tonumber(payload.refundCoins) or 0)

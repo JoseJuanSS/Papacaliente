@@ -51,6 +51,39 @@ local function pickRandomItem(list)
 	return list[math.random(1, #list)]
 end
 
+local function buildVisualRoll(crate, winningItem, winningRarity)
+	local sequence = {}
+	local allItems = {}
+	for rarity, items in pairs(crate.items or {}) do
+		for _, item in ipairs(items) do
+			table.insert(allItems, {
+				id = item.id,
+				type = item.type,
+				displayName = item.displayName,
+				rarity = rarity,
+			})
+		end
+	end
+
+	if #allItems == 0 then
+		return sequence
+	end
+
+	for index = 1, 18 do
+		local picked = allItems[((index - 1) % #allItems) + 1]
+		sequence[index] = picked
+	end
+
+	sequence[16] = {
+		id = winningItem.id,
+		type = winningItem.type,
+		displayName = winningItem.displayName,
+		rarity = winningRarity,
+	}
+
+	return sequence
+end
+
 function CrateService:_ensureInventory(profile)
 	profile.Inventory = profile.Inventory or {
 		Aura = {},
@@ -174,12 +207,14 @@ function CrateService:_openCrate(player, crateId)
 
 	self.RE_CrateOpenResult:FireClient(player, {
 		ok = true,
+		version = 2,
 		crateId = crateId,
 		rarity = rarity,
 		item = item,
 		duplicate = duplicate,
 		refundCoins = refundCoins,
 		coinsAfter = self.Economy:GetCoins(player),
+		visualRoll = buildVisualRoll(crate, item, rarity),
 	})
 end
 

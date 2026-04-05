@@ -6,7 +6,7 @@ local Players = game:GetService("Players")
 local ShopService = {}
 ShopService.__index = ShopService
 
-function ShopService.new(remotesService, remoteNames, economyService, playerDataService, cosmeticsService)
+function ShopService.new(remotesService, remoteNames, economyService, playerDataService, cosmeticsService, premiumService)
 	local self = setmetatable({}, ShopService)
 
 	self.Remotes = remotesService
@@ -14,6 +14,7 @@ function ShopService.new(remotesService, remoteNames, economyService, playerData
 	self.Economy = economyService
 	self.Data = playerDataService
 	self.Cosmetics = cosmeticsService
+	self.Premium = premiumService
 
 	self.RE_ShopRequest = remotesService:GetOrCreateRemoteEvent(remoteNames.ShopRequest)
 	self.RE_ShopUpdate = remotesService:GetOrCreateRemoteEvent(remoteNames.ShopUpdate)
@@ -123,6 +124,8 @@ function ShopService:PushClientState(player)
 		equipped = profile.equipped,
 		coins = self.Economy:GetCoins(player),
 		totalPoints = totalPoints and totalPoints.Value or 0,
+		premiumCatalog = self.Premium and self.Premium:BuildPayload(player).catalog or {},
+		premiumOwned = self.Premium and self.Premium:BuildPayload(player).owned or {},
 	})
 
 	self.RE_InventoryUpdate:FireClient(player, self:SerializeInventory(profile))

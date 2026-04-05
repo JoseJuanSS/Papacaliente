@@ -8,6 +8,10 @@ local DEFAULT_BREAKDOWN = {
 	PassKill = 0,
 }
 
+local function isBotParticipant(player)
+	return type(player) == "table" and player.IsBot == true
+end
+
 function RewardResolver.new(economyService, remotesService, remoteNames, playerDataService)
 	local self = setmetatable({}, RewardResolver)
 	self.Economy = economyService
@@ -58,7 +62,7 @@ function RewardResolver:EnsureMatchStats(userId)
 end
 
 function RewardResolver:GetProfile(player)
-	if not player or player.IsBot then
+	if not player or isBotParticipant(player) then
 		return nil
 	end
 	return self.Data and self.Data:GetProfile(player) or nil
@@ -149,33 +153,33 @@ function RewardResolver:AwardCoins(player, amount, reason, playersService)
 end
 
 function RewardResolver:RecordPass(player)
-	if not player or player.IsBot then return end
+	if not player or isBotParticipant(player) then return end
 	self:EnsureMatchStats(player.UserId).PassesMade += 1
 	self:AddPersistentStat(player, "PassesMade", 1)
 	self.MatchTelemetry.passesTotal += 1
 end
 
 function RewardResolver:RecordPassKill(player)
-	if not player or player.IsBot then return end
+	if not player or isBotParticipant(player) then return end
 	self:EnsureMatchStats(player.UserId).PassKills += 1
 	self:AddPersistentStat(player, "PassKills", 1)
 	self.MatchTelemetry.passKills += 1
 end
 
 function RewardResolver:RecordRoundSurvived(player)
-	if not player or player.IsBot then return end
+	if not player or isBotParticipant(player) then return end
 	self:EnsureMatchStats(player.UserId).RoundsSurvived += 1
 	self:AddPersistentStat(player, "RoundsSurvived", 1)
 end
 
 function RewardResolver:RecordMatchPlayed(player)
-	if not player or player.IsBot then return end
+	if not player or isBotParticipant(player) then return end
 	self:AddPersistentStat(player, "MatchesPlayed", 1)
 	self:EnsureMatchStats(player.UserId)
 end
 
 function RewardResolver:RecordMatchWin(player)
-	if not player or player.IsBot then return end
+	if not player or isBotParticipant(player) then return end
 	self:AddPersistentStat(player, "MatchesWon", 1)
 end
 
@@ -191,7 +195,7 @@ function RewardResolver:SetMatchTelemetry(modifier, roundsPlayed, durationSecond
 end
 
 function RewardResolver:RecordHolderTime(player, seconds)
-	if not player or player.IsBot then return end
+	if not player or isBotParticipant(player) then return end
 	local rounded = math.max(0, math.round((tonumber(seconds) or 0) * 10) / 10)
 	if rounded <= 0 then return end
 

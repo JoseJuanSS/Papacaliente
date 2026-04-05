@@ -1,3 +1,6 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MapCatalog = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("MapCatalog"))
+
 local MapManager = {}
 MapManager.__index = MapManager
 
@@ -80,23 +83,17 @@ function MapManager:GetPlayableMapNames()
 	end
 
 	local validNames = {}
-	local fallbackNames = {}
 
 	for _, map in ipairs(self.MapsFolder:GetChildren()) do
 		if map:IsA("Model") then
-			if self:ValidateMap(map) then
+			local metadata = MapCatalog.Maps[map.Name]
+			if (not metadata or metadata.enabled ~= false) and self:ValidateMap(map) then
 				table.insert(validNames, map.Name)
-			else
-				table.insert(fallbackNames, map.Name)
 			end
 		end
 	end
 
-	if #validNames > 0 then
-		return validNames
-	end
-
-	return fallbackNames
+	return validNames
 end
 
 function MapManager:GetRandomMapName(preferredName)
@@ -113,7 +110,16 @@ function MapManager:GetRandomMapName(preferredName)
 		end
 	end
 
-	return source[math.random(1, #source)]
+	local weighted = {}
+	for _, mapName in ipairs(source) do
+		local metadata = MapCatalog.Maps[mapName]
+		local weight = metadata and metadata.weight or 1
+		for _ = 1, math.max(1, weight) do
+			table.insert(weighted, mapName)
+		end
+	end
+
+	return weighted[math.random(1, #weighted)]
 end
 
 function MapManager:GetMapByName(mapName)

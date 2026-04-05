@@ -1,21 +1,23 @@
--- ServerScriptService/Server/Services/PlayerDataService.lua
 local Players = game:GetService("Players")
 local DataStoreService = game:GetService("DataStoreService")
+local RunService = game:GetService("RunService")
 
 local PlayerDataService = {}
 PlayerDataService.__index = PlayerDataService
 
-local DATA_VERSION = 8
+local DATA_VERSION = 9
+local STORE_NAME = "HotPotato_PlayerData_v6"
+local AUTOSAVE_INTERVAL = 60
 
-local function deepCopy(t)
-	if type(t) ~= "table" then
-		return t
+local function deepCopy(value)
+	if type(value) ~= "table" then
+		return value
 	end
-	local out = {}
-	for k, v in pairs(t) do
-		out[k] = deepCopy(v)
+	local copy = {}
+	for key, nested in pairs(value) do
+		copy[key] = deepCopy(nested)
 	end
-	return out
+	return copy
 end
 
 local function defaultStats()
@@ -54,127 +56,228 @@ local function defaultSession()
 			Unlocked = {},
 			Progress = {},
 		},
+		Premium = {
+			Gamepasses = {},
+			LastSyncAt = 0,
+		},
+		Pets = {
+			Owned = {},
+			Equipped = nil,
+			Slots = 1,
+		},
+		Skills = {
+			Unlocked = { DASH = true },
+			Equipped = "DASH",
+		},
+		BattlePass = {
+			SeasonId = "S1",
+			XP = 0,
+			ClaimedFree = {},
+			ClaimedPremium = {},
+			PremiumUnlocked = false,
+		},
+		SeasonProgress = {},
+		AudienceVote = {
+			LastMapVote = nil,
+			LastVotedAt = 0,
+		},
+		Debug = {
+			LastLoadOk = false,
+			LastSaveOk = false,
+			LastError = "",
+		},
 	}
+end
+
+local function mergeSession(target, source)
+	if type(source) ~= "table" then
+		return target
+	end
+
+	for key, value in pairs(source) do
+		if type(value) == "table" and type(target[key]) == "table" then
+			mergeSession(target[key], value)
+		elseif value ~= nil then
+			target[key] = deepCopy(value)
+		end
+	end
+
+	return target
 end
 
 function PlayerDataService.new(economyService)
 	local self = setmetatable({}, PlayerDataService)
-
-	self.DS = DataStoreService:GetDataStore("HotPotato_PlayerData_v6")
+	self.DS = DataStoreService:GetDataStore(STORE_NAME)
 	self.Economy = economyService
 	self.Sessions = {}
+	self.DataStoreEnabled = true
+	self._autosaveThread = nil
 
-	Players.PlayerAdded:Connect(function(plr)
-		self:Load(plr)
+	Players.PlayerAdded:Connect(function(player)
+		self:Load(player)
 	end)
 
-	Players.PlayerRemoving:Connect(function(plr)
-		self:Save(plr)
-		self.Sessions[plr.UserId] = nil
+	Players.PlayerRemoving:Connect(function(player)
+		self:Save(player, "PlayerRemoving")
+		self.Sessions[player.UserId] = nil
 	end)
 
 	game:BindToClose(function()
-		for _, plr in ipairs(Players:GetPlayers()) do
+		for _, player in ipairs(Players:GetPlayers()) do
 			pcall(function()
-				self:Save(plr)
+				self:Save(player, "BindToClose")
 			end)
 		end
 	end)
 
-	for _, plr in ipairs(Players:GetPlayers()) do
-		self:Load(plr)
+	for _, player in ipairs(Players:GetPlayers()) do
+		self:Load(player)
 	end
 
+	self:StartAutosave()
 	return self
 end
-function PlayerDataService:GetSession(player)
-	local s = self.Sessions[player.UserId]
-	if not s then
-		s = defaultSession()
-		self.Sessions[player.UserId] = s
+
+function PlayerDataService:StartAutosave()
+	if self._autosaveThread then
+		return
 	end
-	return s
+
+	self._autosaveThread = task.spawn(function()
+		while true do
+			task.wait(AUTOSAVE_INTERVAL)
+			for _, player in ipairs(Players:GetPlayers()) do
+				self:Save(player, "AutoSave")
+			end
+		end
+	end)
+end
+
+function PlayerDataService:GetSession(player)
+	local session = self.Sessions[player.UserId]
+	if not session then
+		session = defaultSession()
+		self.Sessions[player.UserId] = session
+	end
+	return session
+end
+
+function PlayerDataService:NormalizeSession(session)
+	session = mergeSession(defaultSession(), session or {})
+	session.DataVersion = DATA_VERSION
+	session.Stats = mergeSession(defaultStats(), session.Stats or {})
+	session.Inventory = mergeSession({ Aura = {}, Trail = {} }, session.Inventory or {})
+	session.equipped = mergeSession({ Aura = nil, Trail = nil }, session.equipped or {})
+	session.Mastery = mergeSession({ Unlocked = {}, Progress = {} }, session.Mastery or {})
+	session.Premium = mergeSession({ Gamepasses = {}, LastSyncAt = 0 }, session.Premium or {})
+	session.Pets = mergeSession({ Owned = {}, Equipped = nil, Slots = 1 }, session.Pets or {})
+	session.Skills = mergeSession({ Unlocked = { DASH = true }, Equipped = "DASH" }, session.Skills or {})
+	session.BattlePass = mergeSession({
+		SeasonId = "S1",
+		XP = 0,
+		ClaimedFree = {},
+		ClaimedPremium = {},
+		PremiumUnlocked = false,
+	}, session.BattlePass or {})
+	session.AudienceVote = mergeSession({ LastMapVote = nil, LastVotedAt = 0 }, session.AudienceVote or {})
+	session.Debug = mergeSession({ LastLoadOk = false, LastSaveOk = false, LastError = "" }, session.Debug or {})
+	return session
+end
+
+function PlayerDataService:BuildPayload(player, session)
+	return {
+		DataVersion = DATA_VERSION,
+		owned = session.owned,
+		equipped = session.equipped,
+		coins = self.Economy and self.Economy:GetCoins(player) or session.Coins or 0,
+		Points = self.Economy and self.Economy:GetPoints(player) or session.Points or 0,
+		TotalPoints = self.Economy and self.Economy:GetTotalPoints(player) or session.TotalPoints or 0,
+		XP = session.XP,
+		Level = session.Level,
+		Missions = session.Missions,
+		Inventory = session.Inventory,
+		Stats = session.Stats,
+		Mastery = session.Mastery,
+		Premium = session.Premium,
+		Pets = session.Pets,
+		Skills = session.Skills,
+		BattlePass = session.BattlePass,
+		SeasonProgress = session.SeasonProgress,
+		AudienceVote = session.AudienceVote,
+	}
+end
+
+function PlayerDataService:MarkDataStoreUnavailable(context, err)
+	self.DataStoreEnabled = false
+	warn(("[PlayerDataService] DataStore unavailable during %s: %s"):format(tostring(context), tostring(err)))
+	if RunService:IsStudio() then
+		warn("[PlayerDataService] En Studio activa 'Enable Studio Access to API Services' para probar persistencia real.")
+	end
 end
 
 function PlayerDataService:Load(player)
 	local userId = player.UserId
 	local key = "u_" .. tostring(userId)
+	local loaded = nil
 
-	local data
-	local ok = pcall(function()
-		data = self.DS:GetAsync(key)
+	local ok, err = pcall(function()
+		loaded = self.DS:GetAsync(key)
 	end)
 
-	local session = defaultSession()
+	local session = self:NormalizeSession(defaultSession())
 
-	if ok and type(data) == "table" then
-		if type(data.DataVersion) == "number" then session.DataVersion = data.DataVersion end
-		if type(data.XP) == "number" then session.XP = data.XP end
-		if type(data.Level) == "number" then session.Level = data.Level end
-		if type(data.coins) == "number" then session.Coins = data.coins end
-		if type(data.Points) == "number" then session.Points = data.Points end
-		if type(data.TotalPoints) == "number" then session.TotalPoints = data.TotalPoints end
-		if type(data.owned) == "table" then session.owned = deepCopy(data.owned) end
-		if type(data.equipped) == "table" then
-			session.equipped.Aura = data.equipped.Aura
-			session.equipped.Trail = data.equipped.Trail
-		end
+	if ok and type(loaded) == "table" then
+		session = self:NormalizeSession(loaded)
+		session.Debug.LastLoadOk = true
+		session.Debug.LastError = ""
+		print(("[PlayerDataService] Load OK for %s"):format(player.Name))
+	elseif not ok then
+		session.Debug.LastLoadOk = false
+		session.Debug.LastError = tostring(err)
+		self:MarkDataStoreUnavailable("load", err)
+	else
+		session.Debug.LastLoadOk = true
+		session.Debug.LastError = ""
+		print(("[PlayerDataService] No existing save for %s, using defaults."):format(player.Name))
+	end
+
+	self.Sessions[userId] = session
+
+	if self.Economy then
 		self.Economy:SetCoins(player, session.Coins or 0)
 		self.Economy:SetPoints(player, session.Points or 0)
 		self.Economy:SetTotalPoints(player, session.TotalPoints or 0)
-		if type(data.Missions) == "table" then
-			session.Missions = deepCopy(data.Missions)
-		end
-		if type(data.Inventory) == "table" then
-			session.Inventory = deepCopy(data.Inventory)
-		end
-		if type(data.Mastery) == "table" then
-			session.Mastery = deepCopy(data.Mastery)
-			session.Mastery.Unlocked = session.Mastery.Unlocked or {}
-			session.Mastery.Progress = session.Mastery.Progress or {}
-		end
-		if type(data.Stats) == "table" then
-			for key, value in pairs(defaultStats()) do
-				if type(data.Stats[key]) == "number" then
-					session.Stats[key] = data.Stats[key]
-				else
-					session.Stats[key] = value
-				end
-			end
-		end
 	end
 
-	session.DataVersion = DATA_VERSION
-
-	self.Sessions[userId] = session
 	return session
 end
 
-function PlayerDataService:Save(player)
+function PlayerDataService:Save(player, reason)
 	local session = self.Sessions[player.UserId]
-	if not session then return end
+	if not session then
+		return false
+	end
 
 	local key = "u_" .. tostring(player.UserId)
-	local payload = {
-		DataVersion = DATA_VERSION,
-		owned = session.owned,
-		equipped = session.equipped,
-		coins = self.Economy:GetCoins(player),
-		Points = self.Economy:GetPoints(player),
-		TotalPoints = self.Economy:GetTotalPoints(player),
+	local latestPayload = self:BuildPayload(player, self:NormalizeSession(session))
 
-		XP = session.XP,
-		Level = session.Level,
-
-		Missions = session.Missions,
-		Inventory = session.Inventory,
-		Stats = session.Stats,
-		Mastery = session.Mastery,
-	}
-
-	pcall(function()
-		self.DS:SetAsync(key, payload)
+	local ok, err = pcall(function()
+		self.DS:UpdateAsync(key, function(oldData)
+			local merged = self:NormalizeSession(type(oldData) == "table" and oldData or {})
+			return mergeSession(merged, latestPayload)
+		end)
 	end)
+
+	session.Debug.LastSaveOk = ok
+	session.Debug.LastError = ok and "" or tostring(err)
+
+	if ok then
+		print(("[PlayerDataService] Save OK for %s (%s)"):format(player.Name, tostring(reason or "manual")))
+		return true
+	end
+
+	self:MarkDataStoreUnavailable("save", err)
+	return false
 end
 
 function PlayerDataService:GetProfile(player)
